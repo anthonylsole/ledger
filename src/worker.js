@@ -78,21 +78,22 @@ async function syncPaydayFunding(env) {
 
   // Phase 1: establish a fixed per-payday increment for any bill that doesn't have
   // one yet (new bills, or bills whose due date/total changed since last cycle).
-  // Counts paydays today-or-later, up to and including the due date.
+  // Only establishes an increment when the due date is still valid (today or later)
+  // and at least one payday remains before it — otherwise leaves it unset, meaning
+  // this bill is left alone entirely (no auto-calculated split) until a fresh,
+  // future due date is in place (e.g. via Mark Paid rolling it forward, or an edit).
   for (const b of bills) {
     if (b.funding_increment !== null && b.funding_increment !== undefined) continue;
-    let inc;
-    if (b.due_date < today) {
-      inc = b.total; // already overdue — fund it in one shot
-    } else {
-      const count = paydayRows.filter((p) => p.pay_date >= today && p.pay_date <= b.due_date).length;
-      inc = count > 0 ? b.total / count : b.total;
-    }
+    if (b.due_date < today) continue; // overdue, no rollover yet — leave unset, don't touch split
+    const count = paydayRows.filter((p) => p.pay_date >= today && p.pay_date <= b.due_date).length;
+    if (count === 0) continue; // no qualifying paydays before due — leave unset
+    const inc = b.total / count;
     await env.DB.prepare('UPDATE bills SET funding_increment=? WHERE id=?').bind(inc, b.id).run();
     b.funding_increment = inc; // keep local copy in sync for phase 2 below
   }
 
-  // Phase 2: on a new elapsed payday, add each bill's fixed increment to its split.
+  // Phase 2: on a new elapsed payday, add each bill's fixed increment to its split —
+  // only for bills that actually have an established increment (see phase 1).
   let currentPayday = null;
   for (const p of paydayRows) {
     if (p.pay_date <= today) currentPayday = p.pay_date;
@@ -106,6 +107,7 @@ async function syncPaydayFunding(env) {
   for (const b of bills) {
     if (b.manual_status) continue; // respect manual override — hands off
     if (b.status === 'paid') continue; // already settled, nothing to fund
+    if (b.funding_increment === null || b.funding_increment === undefined) continue; // no valid due date to fund toward
     const newSplit = Math.min(b.total, b.split + b.funding_increment);
     await env.DB.prepare('UPDATE bills SET split=? WHERE id=?').bind(newSplit, b.id).run();
   }
