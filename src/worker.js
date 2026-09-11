@@ -278,12 +278,16 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '<style>' +
 ':root{--ink:#1B2733;--paper-raised:#FFFFFF;--teal:#1F6F63;--sage:#4C9A6A;--sage-bg:#E4F1E8;--amber:#C98A2C;--amber-bg:#F7EBD8;--rust:#B54A3F;--rust-bg:#F8E4E1;--slate:#C7D0CC;--muted:#5D6B66;--peach:#FBB18F;}' +
 '*{box-sizing:border-box;}' +
-'body{margin:0;background:linear-gradient(180deg,#8FD9FB 0%,#022333 100%);background-attachment:fixed;color:var(--ink);font-family:"IBM Plex Sans",sans-serif;line-height:1.4;}' +
+'body{margin:0;background:#022333;color:var(--ink);font-family:"IBM Plex Sans",sans-serif;line-height:1.4;}' +
 '.app{max-width:1240px;margin:0 auto;padding:28px 24px 80px;}' +
-'header.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;padding-bottom:16px;border-bottom:2px solid #000;flex-wrap:wrap;gap:12px;}' +
-'.brand{font-family:"Spectral",serif;font-weight:700;font-size:26px;letter-spacing:0.2px;color:#000;}' +
+'header.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;padding-bottom:16px;border-bottom:2px solid #fff;flex-wrap:wrap;gap:12px;}' +
+'.brand{font-family:"Spectral",serif;font-weight:700;font-size:26px;letter-spacing:0.2px;color:#fff;}' +
 '.brand span{color:var(--peach);}' +
-'.brand .today-date{font-weight:400;font-size:1em;color:#333;}' +
+'.brand .today-date{font-weight:400;font-size:1em;color:#fff;}' +
+'.btn{font-family:"IBM Plex Sans",sans-serif;font-size:13.5px;font-weight:600;padding:9px 16px;border-radius:5px;border:1.5px solid #000;background:transparent;color:#000;cursor:pointer;}' +
+'.btn-primary{background:var(--teal);border-color:var(--teal);color:#fff;}' +
+'.btn-ghost{border-color:#000;color:#000;}' +
+'.btn-invert{border-color:#fff;color:#fff;background:transparent;}' +
 '.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px;}' +
 '.card{background:var(--paper-raised);border:1px solid var(--slate);border-radius:8px;padding:16px 18px;text-align:center;}' +
 '.card .label{font-size:14.5px;color:var(--muted);font-weight:600;cursor:default;}' +
@@ -301,11 +305,11 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '.paydays-title{font-family:"Spectral",serif;font-weight:600;font-size:18px;color:#fff;margin-bottom:8px;}' +
 '.category{margin-bottom:26px;}' +
 '.category-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;}' +
-'.category-title{font-family:"Spectral",serif;font-weight:600;font-size:18px;color:#fff;}' +
-'.category-total{font-family:"IBM Plex Mono",monospace;font-size:17px;color:#000;font-weight:700;background:#fff;border-radius:6px;padding:2px 8px;display:inline-block;}' +
+'.category-title{font-family:"Spectral",serif;font-weight:600;font-size:18px;color:#fff;text-transform:uppercase;}' +
+'.category-total{font-family:"IBM Plex Mono",monospace;font-size:17px;color:#fff;font-weight:700;}' +
 '.table-wrap{overflow-x:auto;border-radius:8px;}' +
 'table.ledger{width:100%;border-collapse:collapse;background:var(--paper-raised);border:1px solid var(--slate);border-radius:8px;overflow:hidden;}' +
-'table.ledger th{text-align:left;font-size:11.5px;font-weight:600;color:var(--muted);padding:9px 12px;border-bottom:1.5px solid var(--slate);background:#F4F7F5;white-space:nowrap;}' +
+'table.ledger th{text-align:left;font-size:13.5px;font-weight:600;color:var(--muted);padding:9px 12px;border-bottom:1.5px solid var(--slate);background:#F4F7F5;white-space:nowrap;}' +
 'table.ledger td{padding:10px 12px;font-size:13.5px;border-bottom:1px solid #E4E9E6;vertical-align:middle;white-space:nowrap;}' +
 'table.ledger tr:last-child td{border-bottom:none;}' +
 'td.num,th.num{font-family:"IBM Plex Mono",monospace;text-align:right;}' +
@@ -328,6 +332,10 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '.add-row{text-align:left;padding:9px 12px;font-size:12.5px;font-weight:600;color:var(--teal);cursor:pointer;background:#F4F7F5;border:none;width:100%;}' +
 'footer.bottom{display:flex;justify-content:center;margin-top:12px;}' +
 '.empty{color:#fff;text-align:center;padding:40px 0;font-size:14.5px;}' +
+'.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50;}' +
+'.modal{background:#fff;border-radius:8px;padding:22px;width:100%;max-width:420px;max-height:90vh;overflow:auto;}' +
+'.modal h3{font-family:"Spectral",serif;margin-top:0;color:var(--ink);}' +
+'.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px;}' +
 '.edit-input{width:100%;min-width:80px;padding:5px 6px;border:1px solid var(--slate);border-radius:4px;font-size:12.5px;font-family:"IBM Plex Sans",sans-serif;}' +
 '.edit-input.num{font-family:"IBM Plex Mono",monospace;text-align:right;}' +
 '.edit-name-wrap{display:flex;flex-direction:column;gap:4px;min-width:150px;}' +
@@ -353,7 +361,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  headerHtml+=" &nbsp;&nbsp;-&nbsp;&nbsp; Next Payday: <span class=\\"today-date\\">"+(state.nextPaycheck?fmtDate(state.nextPaycheck):"Not set")+"</span>";' +
 '  var header=el("header",{class:"topbar"},[' +
 '    el("div",{class:"brand",html:headerHtml}),' +
-'    (function(){var b=el("button",{class:"btn btn-ghost"},[document.createTextNode("Paydays")]);b.onclick=openPaydaysModal;return b;})()' +
+'    (function(){var b=el("button",{class:"btn btn-invert"},[document.createTextNode("Paydays")]);b.onclick=openPaydaysModal;return b;})()' +
 '  ]);' +
 '  app.appendChild(header);' +
 '  var summary=el("div",{class:"summary"},[' +
@@ -372,7 +380,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '    app.appendChild(el("div",{class:"empty"},[document.createTextNode("No categories yet.")]));' +
 '  }' +
 '  state.categories.forEach(function(cat){app.appendChild(renderCategory(cat));});' +
-'  var footer=el("footer",{class:"bottom"},[(function(){var b=el("button",{class:"btn btn-invert"},[document.createTextNode("+ Add Category")]);b.onclick=addCategory;b.style.border="1.5px solid #fff";b.style.color="#fff";b.style.background="transparent";b.style.padding="9px 16px";b.style.borderRadius="5px";b.style.fontWeight="600";b.style.fontSize="13.5px";b.style.cursor="pointer";return b;})()]);' +
+'  var footer=el("footer",{class:"bottom"},[(function(){var b=el("button",{class:"btn btn-invert"},[document.createTextNode("+ Add Category")]);b.onclick=addCategory;return b;})()]);' +
 '  app.appendChild(footer);' +
 '}' +
 'function renderBalanceCard(){' +
@@ -393,6 +401,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  }' +
 '  return c;' +
 '}' +
+'function closeModal(){var m=document.querySelector(".modal-backdrop");if(m)m.remove();}' +
 'function buildPaydaysTable(){' +
 '  var table=el("table",{class:"ledger"},[el("tr",{},[el("th",{},[document.createTextNode("Date")]),el("th",{},[document.createTextNode("Actions")])])]);' +
 '  state.paydays.forEach(function(p){' +
