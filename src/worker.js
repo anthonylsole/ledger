@@ -120,11 +120,17 @@ async function handleApi(request, env, url) {
     if (!b.category_id || !b.name || !b.method || !b.due_date) {
       return json({ error: 'category_id, name, method, and due_date are required' }, 400);
     }
+    const total = b.total || 0;
+    const split = b.split || 0;
+    const status = split >= total && total > 0 ? 'funded' : split > 0 ? 'partial' : 'needs_funding';
     await env.DB.prepare(
-      `INSERT INTO bills (category_id, name, method, total, split, due_date, status)
-       VALUES (?, ?, ?, ?, 0, ?, 'needs_funding')`
+      `INSERT INTO bills (category_id, name, method, total, split, due_date, date_paid, date_withdrawn, confirmation, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-      .bind(b.category_id, b.name, b.method, b.total || 0, b.due_date)
+      .bind(
+        b.category_id, b.name, b.method, total, split, b.due_date,
+        b.date_paid || null, b.date_withdrawn || null, b.confirmation || null, status
+      )
       .run();
     return json(await getState(env));
   }
@@ -263,6 +269,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '<script>' +
 'var state=null;' +
 'var editingBillId=null;' +
+'var addingInCategoryId=null;' +
 'function el(tag,attrs,children){var e=document.createElement(tag);attrs=attrs||{};for(var k in attrs){if(k==="class")e.className=attrs[k];else if(k==="html")e.innerHTML=attrs[k];else e.setAttribute(k,attrs[k]);}children=children||[];for(var i=0;i<children.length;i++){if(children[i])e.appendChild(children[i]);}return e;}' +
 'function fmt(n){var v=(Math.round((n+Number.EPSILON)*100)/100).toFixed(2);var neg=v.charAt(0)==="-";if(neg)v=v.slice(1);var parts=v.split(".");parts[0]=parts[0].replace(/\\B(?=(\\d{3})+(?!\\d))/g,",");return (neg?"-$":"$")+parts.join(".");}' +
 'function fmtDate(iso){if(!iso)return "—";var p=iso.split("-");var d=new Date(parseInt(p[0],10),parseInt(p[1],10)-1,parseInt(p[2],10));return d.toLocaleDateString("en-US",{month:"long",day:"numeric"});}' +
@@ -310,11 +317,15 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  ]);' +
 '  var table=el("table",{class:"ledger"},[thead]);' +
 '  cat.bills.forEach(function(b){table.appendChild(b.id===editingBillId?renderBillEditRow(b):renderBillRow(b));});' +
-'  var addRowTd=el("td",{colspan:"8"},[]);' +
-'  var addBtn=el("button",{class:"add-row"},[document.createTextNode("+ Add bill to "+cat.name)]);' +
-'  addBtn.onclick=function(){addBillPrompt(cat.id);};' +
-'  addRowTd.appendChild(addBtn);' +
-'  table.appendChild(el("tr",{},[addRowTd]));' +
+'  if(cat.id===addingInCategoryId){' +
+'    table.appendChild(renderNewBillRow(cat.id));' +
+'  }else{' +
+'    var addRowTd=el("td",{colspan:"8"},[]);' +
+'    var addBtn=el("button",{class:"add-row"},[document.createTextNode("+ Add bill to "+cat.name)]);' +
+'    addBtn.onclick=function(){addingInCategoryId=cat.id;render();};' +
+'    addRowTd.appendChild(addBtn);' +
+'    table.appendChild(el("tr",{},[addRowTd]));' +
+'  }' +
 '  return el("div",{class:"category"},[head,el("div",{class:"table-wrap"},[table])]);' +
 '}' +
 'function renderBillRow(b){' +
@@ -397,15 +408,48 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  if(!name)return;' +
 '  api("/categories",{method:"POST",body:JSON.stringify({name:name})}).then(function(s){state=s;render();});' +
 '}' +
-'function addBillPrompt(categoryId){' +
-'  var name=prompt("Bill name");' +
-'  if(!name)return;' +
-'  var total=parseFloat(prompt("Total amount due","0"))||0;' +
-'  var due=prompt("Due date (YYYY-MM-DD)");' +
-'  if(!due)return;' +
-'  var method=(prompt("Auto-pay or Manual? (A/M)","A")||"A").toUpperCase();' +
-'  if(method!=="A"&&method!=="M")method="A";' +
-'  api("/bills",{method:"POST",body:JSON.stringify({category_id:categoryId,name:name,total:total,due_date:due,method:method})}).then(function(s){state=s;render();});' +
+'function renderNewBillRow(categoryId){' +
+'  var nameWrap=el("div",{class:"edit-name-wrap"},[]);' +
+'  var nameInput=el("input",{class:"edit-input",placeholder:"Bill name"},[]);' +
+'  var methodSelect=el("select",{},[el("option",{value:"A"},[document.createTextNode("Auto-pay")]),el("option",{value:"M"},[document.createTextNode("Manual")])]);' +
+'  var confInput=el("input",{class:"edit-input",placeholder:"Confirmation #"},[]);' +
+'  nameWrap.appendChild(nameInput);nameWrap.appendChild(methodSelect);nameWrap.appendChild(confInput);' +
+'  var nameCell=el("td",{},[nameWrap]);' +
+'  var totalInput=el("input",{class:"edit-input num",type:"number",step:"0.01",placeholder:"0.00"},[]);' +
+'  var splitInput=el("input",{class:"edit-input num",type:"number",step:"0.01",placeholder:"0.00"},[]);' +
+'  var dueInput=el("input",{class:"edit-input",type:"date"},[]);' +
+'  var paidInput=el("input",{class:"edit-input",type:"date"},[]);' +
+'  var withdrawnInput=el("input",{class:"edit-input",type:"date"},[]);' +
+'  var actions=el("td",{class:"row-actions"},[]);' +
+'  var saveBtn=el("button",{class:"mini-btn save"},[document.createTextNode("Save")]);' +
+'  saveBtn.onclick=function(){' +
+'    if(!nameInput.value||!dueInput.value){alert("Bill name and due date are required.");return;}' +
+'    var payload={' +
+'      category_id:categoryId,' +
+'      name:nameInput.value,' +
+'      method:methodSelect.value,' +
+'      total:parseFloat(totalInput.value)||0,' +
+'      split:parseFloat(splitInput.value)||0,' +
+'      due_date:dueInput.value,' +
+'      date_paid:paidInput.value||null,' +
+'      date_withdrawn:withdrawnInput.value||null,' +
+'      confirmation:confInput.value||null' +
+'    };' +
+'    api("/bills",{method:"POST",body:JSON.stringify(payload)}).then(function(s){state=s;addingInCategoryId=null;render();});' +
+'  };' +
+'  var cancelBtn=el("button",{class:"mini-btn"},[document.createTextNode("Cancel")]);' +
+'  cancelBtn.onclick=function(){addingInCategoryId=null;render();};' +
+'  actions.appendChild(saveBtn);actions.appendChild(cancelBtn);' +
+'  return el("tr",{},[' +
+'    nameCell,' +
+'    el("td",{},[totalInput]),' +
+'    el("td",{},[splitInput]),' +
+'    el("td",{},[dueInput]),' +
+'    el("td",{},[paidInput]),' +
+'    el("td",{},[withdrawnInput]),' +
+'    el("td",{},[document.createTextNode("—")]),' +
+'    actions' +
+'  ]);' +
 '}' +
 'function markPaid(b){' +
 '  var conf=prompt("Confirmation # (optional)",b.confirmation||"");' +
