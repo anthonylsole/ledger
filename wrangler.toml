@@ -1,0 +1,8 @@
+name = "tonys-general-ledger"
+main = "src/worker.js"
+compatibility_date = "2024-09-23"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tonys-ledger-db"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
