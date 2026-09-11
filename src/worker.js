@@ -389,12 +389,20 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '.totals-row td{background:#F4F7F5;font-weight:700;}' +
 '.totals-row .total-value{color:var(--ink);}' +
 '.table-wrap{overflow-x:auto;border-radius:8px;}' +
-'table.ledger{width:100%;border-collapse:collapse;background:var(--paper-raised);border:1px solid var(--slate);border-radius:8px;overflow:hidden;}' +
-'table.ledger th{text-align:left;font-size:13.5px;font-weight:600;color:var(--muted);padding:9px 12px;border-bottom:1.5px solid var(--slate);background:#F4F7F5;white-space:nowrap;}' +
-'table.ledger td{padding:12px 16px;font-size:15.5px;border-bottom:1px solid #E4E9E6;vertical-align:middle;white-space:nowrap;}' +
+'table.ledger{width:100%;table-layout:fixed;border-collapse:collapse;background:var(--paper-raised);border:1px solid var(--slate);border-radius:8px;overflow:hidden;}' +
+'table.ledger th:nth-child(1),table.ledger td:nth-child(1){width:20%;}' +
+'table.ledger th:nth-child(2),table.ledger td:nth-child(2){width:9%;}' +
+'table.ledger th:nth-child(3),table.ledger td:nth-child(3){width:9%;}' +
+'table.ledger th:nth-child(4),table.ledger td:nth-child(4){width:10%;}' +
+'table.ledger th:nth-child(5),table.ledger td:nth-child(5){width:10%;}' +
+'table.ledger th:nth-child(6),table.ledger td:nth-child(6){width:11%;}' +
+'table.ledger th:nth-child(7),table.ledger td:nth-child(7){width:15%;}' +
+'table.ledger th:nth-child(8),table.ledger td:nth-child(8){width:16%;}' +
+'table.ledger th{text-align:left;font-size:13.5px;font-weight:600;color:var(--muted);padding:9px 12px;border-bottom:1.5px solid var(--slate);background:#F4F7F5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}' +
+'table.ledger td{padding:12px 16px;font-size:15.5px;border-bottom:1px solid #E4E9E6;vertical-align:middle;word-wrap:break-word;}' +
 'table.ledger tr:last-child td{border-bottom:none;}' +
-'td.num,th.num{font-family:"IBM Plex Mono",monospace;text-align:right;}' +
-'td.datecell{color:var(--ink);}' +
+'td.num,th.num{font-family:"IBM Plex Mono",monospace;text-align:right;white-space:nowrap;}' +
+'td.datecell{color:var(--ink);white-space:nowrap;}' +
 '.method-flag{font-family:"IBM Plex Mono",monospace;font-weight:600;font-size:11.5px;margin-left:6px;padding:1px 5px;border-radius:3px;}' +
 '.flag-A{background:var(--sage-bg);color:var(--sage);}' +
 '.flag-M{background:var(--amber-bg);color:var(--amber);}' +
