@@ -1,6 +1,6 @@
 // Tony's General Ledger — Cloudflare Worker
 // Serves the frontend and the JSON API backed by D1.
-// Requires a D1 binding named `DB` (see wrangler.toml).
+// Requires another D1 binding named `DB` (see wrangler.toml).
 // Put this Worker behind Cloudflare Access (Zero Trust) — see README.md.
 
 function json(data, status = 200) {
