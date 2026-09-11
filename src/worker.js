@@ -65,7 +65,61 @@ function billStatus(bill) {
   return 'funded';
 }
 
+async function syncPaydayFunding(env) {
+  const today = todayISO();
+  const { results: paydayRows } = await env.DB.prepare(
+    'SELECT pay_date FROM paydays ORDER BY pay_date'
+  ).all();
+  if (!paydayRows.length) return;
+
+  const { results: bills } = await env.DB.prepare(
+    'SELECT id, total, split, due_date, manual_status, status, funding_increment FROM bills'
+  ).all();
+
+  // Phase 1: establish a fixed per-payday increment for any bill that doesn't have
+  // one yet (new bills, or bills whose due date/total changed since last cycle).
+  // Counts paydays today-or-later, up to and including the due date.
+  for (const b of bills) {
+    if (b.funding_increment !== null && b.funding_increment !== undefined) continue;
+    let inc;
+    if (b.due_date < today) {
+      inc = b.total; // already overdue — fund it in one shot
+    } else {
+      const count = paydayRows.filter((p) => p.pay_date >= today && p.pay_date <= b.due_date).length;
+      inc = count > 0 ? b.total / count : b.total;
+    }
+    await env.DB.prepare('UPDATE bills SET funding_increment=? WHERE id=?').bind(inc, b.id).run();
+    b.funding_increment = inc; // keep local copy in sync for phase 2 below
+  }
+
+  // Phase 2: on a new elapsed payday, add each bill's fixed increment to its split.
+  let currentPayday = null;
+  for (const p of paydayRows) {
+    if (p.pay_date <= today) currentPayday = p.pay_date;
+    else break;
+  }
+  if (!currentPayday) return;
+
+  const lastRow = await env.DB.prepare("SELECT value FROM meta WHERE key='last_payday_processed'").first();
+  if (lastRow && lastRow.value === currentPayday) return; // already applied for this payday
+
+  for (const b of bills) {
+    if (b.manual_status) continue; // respect manual override — hands off
+    if (b.status === 'paid') continue; // already settled, nothing to fund
+    const newSplit = Math.min(b.total, b.split + b.funding_increment);
+    await env.DB.prepare('UPDATE bills SET split=? WHERE id=?').bind(newSplit, b.id).run();
+  }
+
+  await env.DB.prepare(
+    "INSERT OR REPLACE INTO meta (key, value) VALUES ('last_payday_processed', ?)"
+  )
+    .bind(currentPayday)
+    .run();
+}
+
 async function getState(env) {
+  await syncPaydayFunding(env);
+
   const balanceRow = await env.DB.prepare("SELECT value FROM meta WHERE key='balance'").first();
   const balance = balanceRow ? parseFloat(balanceRow.value) : 0;
 
@@ -184,14 +238,17 @@ async function handleApi(request, env, url) {
     };
     const status = merged.split >= merged.total && merged.total > 0 ? 'funded'
       : merged.split > 0 ? 'partial' : 'needs_funding';
+    const dueOrTotalChanged = merged.due_date !== existing.due_date || merged.total !== existing.total;
+    const fundingIncrement = dueOrTotalChanged ? null : existing.funding_increment;
 
     await env.DB.prepare(
-      `UPDATE bills SET name=?, method=?, total=?, split=?, due_date=?, date_paid=?, date_withdrawn=?, confirmation=?, status=?, manual_status=?
+      `UPDATE bills SET name=?, method=?, total=?, split=?, due_date=?, date_paid=?, date_withdrawn=?, confirmation=?, status=?, manual_status=?, funding_increment=?
        WHERE id=?`
     )
       .bind(
         merged.name, merged.method, merged.total, merged.split, merged.due_date,
-        merged.date_paid, merged.date_withdrawn, merged.confirmation, status, merged.manual_status, id
+        merged.date_paid, merged.date_withdrawn, merged.confirmation, status, merged.manual_status,
+        fundingIncrement, id
       )
       .run();
     return json(await getState(env));
@@ -209,7 +266,7 @@ async function handleApi(request, env, url) {
     const confirmation = b.confirmation !== undefined ? b.confirmation : existing.confirmation;
 
     await env.DB.prepare(
-      `UPDATE bills SET date_paid=?, due_date=?, date_withdrawn=?, confirmation=?, split=0, status='paid'
+      `UPDATE bills SET date_paid=?, due_date=?, date_withdrawn=?, confirmation=?, split=0, status='paid', funding_increment=NULL
        WHERE id=?`
     )
       .bind(datePaid, newDueDate, dateWithdrawn, confirmation, id)
@@ -222,6 +279,12 @@ async function handleApi(request, env, url) {
     const body = await request.json();
     if (!body.pay_date) return json({ error: 'pay_date is required' }, 400);
     await env.DB.prepare('INSERT INTO paydays (pay_date) VALUES (?)').bind(body.pay_date).run();
+    return json(await getState(env));
+  }
+
+  // DELETE /api/paydays  — clear all paydays at once (e.g. end-of-year reset)
+  if (method === 'DELETE' && parts[1] === 'paydays' && parts.length === 2) {
+    await env.DB.prepare('DELETE FROM paydays').run();
     return json(await getState(env));
   }
 
@@ -442,7 +505,10 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  modal.appendChild(el("h3",{},[document.createTextNode("Paydays")]));' +
 '  var content=el("div",{id:"paydays-modal-content"},[]);' +
 '  modal.appendChild(content);' +
-'  var actions=el("div",{class:"modal-actions"},[(function(){var b=el("button",{class:"btn btn-ghost"},[document.createTextNode("Close")]);b.onclick=closeModal;return b;})()]);' +
+'  var actions=el("div",{class:"modal-actions"},[' +
+'    (function(){var b=el("button",{class:"mini-btn danger"},[document.createTextNode("Clear All")]);b.onclick=function(){if(confirm("Clear every payday? This can\'t be undone \u2014 do this at year-end once HR releases the new pay calendar.")){api("/paydays",{method:"DELETE"}).then(function(s){state=s;render();refreshPaydaysModal();});}};return b;})(),' +
+'    (function(){var b=el("button",{class:"btn btn-ghost"},[document.createTextNode("Close")]);b.onclick=closeModal;return b;})()' +
+'  ]);' +
 '  modal.appendChild(actions);' +
 '  backdrop.appendChild(modal);' +
 '  document.body.appendChild(backdrop);' +
