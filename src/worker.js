@@ -1,6 +1,6 @@
 // Tony's General Ledger — Cloudflare Worker
 // Serves the frontend and the JSON API backed by D1.
-// Requires another D1 binding named `DB` (see wrangler.toml).
+// Requires a D1 binding named `DB` (see wrangler.toml).
 // Put this Worker behind Cloudflare Access (Zero Trust) — see README.md.
 
 function json(data, status = 200) {
@@ -522,7 +522,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  var content=el("div",{id:"paydays-modal-content"},[]);' +
 '  modal.appendChild(content);' +
 '  var actions=el("div",{class:"modal-actions"},[' +
-'    (function(){var b=el("button",{class:"mini-btn danger"},[document.createTextNode("Clear All")]);b.onclick=function(){if(confirm("Clear every payday? This can\'t be undone \u2014 do this at year-end once HR releases the new pay calendar.")){api("/paydays",{method:"DELETE"}).then(function(s){state=s;render();refreshPaydaysModal();});}};return b;})(),' +
+'    (function(){var b=el("button",{class:"mini-btn danger"},[document.createTextNode("Clear All")]);b.onclick=function(){if(confirm("Clear every payday? This can\'t be undone — do this at year-end once HR releases the new pay calendar.")){api("/paydays",{method:"DELETE"}).then(function(s){state=s;render();refreshPaydaysModal();});}};return b;})(),' +
 '    (function(){var b=el("button",{class:"btn btn-ghost"},[document.createTextNode("Close")]);b.onclick=closeModal;return b;})()' +
 '  ]);' +
 '  modal.appendChild(actions);' +
@@ -566,6 +566,11 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '    var payBtn=el("button",{class:"mini-btn pay"},[document.createTextNode("Mark Paid")]);' +
 '    payBtn.onclick=function(){markPaid(b);};' +
 '    actions.appendChild(payBtn);' +
+'  }' +
+'  if(b.status==="paid"){' +
+'    var unpaidBtn=el("button",{class:"mini-btn"},[document.createTextNode("Mark Unpaid")]);' +
+'    unpaidBtn.onclick=function(){if(confirm("Mark "+b.name+" as unpaid?")){api("/bills/"+b.id+"/mark-unpaid",{method:"POST"}).then(function(s){state=s;render();});}};' +
+'    actions.appendChild(unpaidBtn);' +
 '  }' +
 '  var editBtn=el("button",{class:"mini-btn"},[document.createTextNode("Edit")]);' +
 '  editBtn.onclick=function(){editingBillId=b.id;render();};' +
