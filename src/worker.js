@@ -85,8 +85,22 @@ async function syncPaydayFunding(env) {
   for (const b of bills) {
     if (b.funding_increment !== null && b.funding_increment !== undefined) continue;
     if (b.due_date < today) continue; // overdue, no rollover yet — leave unset, don't touch split
+
     const count = paydayRows.filter((p) => p.pay_date >= today && p.pay_date <= b.due_date).length;
-    if (count === 0) continue; // no qualifying paydays before due — leave unset
+
+    if (b.due_date === today || count === 0) {
+      // Due right now, or due soon with no payday able to fund it beforehand —
+      // there's no runway left to spread this over, so fund it fully immediately
+      // rather than waiting for a future elapsed-payday check that may never
+      // arrive in time.
+      await env.DB.prepare('UPDATE bills SET funding_increment=?, split=? WHERE id=?')
+        .bind(b.total, b.total, b.id)
+        .run();
+      b.funding_increment = b.total;
+      b.split = b.total;
+      continue;
+    }
+
     const inc = b.total / count;
     await env.DB.prepare('UPDATE bills SET funding_increment=? WHERE id=?').bind(inc, b.id).run();
     b.funding_increment = inc; // keep local copy in sync for phase 2 below
@@ -344,7 +358,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 ':root{--ink:#1B2733;--paper-raised:#FFFFFF;--teal:#1F6F63;--sage:#4C9A6A;--sage-bg:#E4F1E8;--amber:#C98A2C;--amber-bg:#F7EBD8;--rust:#B54A3F;--rust-bg:#F8E4E1;--slate:#C7D0CC;--muted:#5D6B66;--peach:#FBB18F;}' +
 '*{box-sizing:border-box;}' +
 'body{margin:0;background:#022333;color:var(--ink);font-family:"IBM Plex Sans",sans-serif;line-height:1.4;}' +
-'.app{max-width:1240px;margin:0 auto;padding:28px 24px 80px;}' +
+'.app{max-width:1440px;margin:0 auto;padding:28px 24px 80px;}' +
 'header.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;padding-bottom:16px;border-bottom:2px solid #fff;flex-wrap:wrap;gap:12px;}' +
 '.brand{font-family:"Spectral",serif;font-weight:700;font-size:26px;letter-spacing:0.2px;color:#fff;}' +
 '.brand span{color:var(--peach);}' +
@@ -375,7 +389,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '.table-wrap{overflow-x:auto;border-radius:8px;}' +
 'table.ledger{width:100%;border-collapse:collapse;background:var(--paper-raised);border:1px solid var(--slate);border-radius:8px;overflow:hidden;}' +
 'table.ledger th{text-align:left;font-size:13.5px;font-weight:600;color:var(--muted);padding:9px 12px;border-bottom:1.5px solid var(--slate);background:#F4F7F5;white-space:nowrap;}' +
-'table.ledger td{padding:10px 12px;font-size:13.5px;border-bottom:1px solid #E4E9E6;vertical-align:middle;white-space:nowrap;}' +
+'table.ledger td{padding:12px 16px;font-size:15.5px;border-bottom:1px solid #E4E9E6;vertical-align:middle;white-space:nowrap;}' +
 'table.ledger tr:last-child td{border-bottom:none;}' +
 'td.num,th.num{font-family:"IBM Plex Mono",monospace;text-align:right;}' +
 'td.datecell{color:var(--ink);}' +
