@@ -265,8 +265,8 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '.status-needs_funding{color:var(--rust);}' +
 '.status-paid{color:var(--teal);}' +
 '.status-fund_immediately{display:inline-block;background:var(--rust);color:#fff;font-weight:700;padding:4px 10px;border-radius:4px;font-size:11.5px;}' +
-'.status-auto_withdrawn_validate{display:inline-block;background:var(--amber);color:#fff;font-weight:700;padding:4px 10px;border-radius:4px;font-size:11.5px;}' +
-'.row-actions{display:flex;gap:6px;flex-wrap:wrap;}' +
+'.status-auto_withdrawn_validate{color:var(--amber);}' +
+'.row-actions{display:flex;gap:6px;flex-wrap:nowrap;}' +
 '.mini-btn{font-family:"IBM Plex Sans",sans-serif;font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:4px;border:1px solid var(--slate);background:#fff;color:var(--ink);cursor:pointer;white-space:nowrap;}' +
 '.mini-btn.pay{background:var(--teal);border-color:var(--teal);color:#fff;}' +
 '.mini-btn.save{background:var(--teal);border-color:var(--teal);color:#fff;}' +
