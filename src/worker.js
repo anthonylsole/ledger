@@ -14,6 +14,15 @@ function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function todayEasternDisplay() {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(new Date());
+}
+
 function addMonths(dateStr, n) {
   const d = new Date(dateStr + 'T00:00:00Z');
   const day = d.getUTCDate();
@@ -60,6 +69,12 @@ async function getState(env) {
   const balanceRow = await env.DB.prepare("SELECT value FROM meta WHERE key='balance'").first();
   const balance = balanceRow ? parseFloat(balanceRow.value) : 0;
 
+  const { results: paydayRows } = await env.DB.prepare(
+    'SELECT id, pay_date FROM paydays ORDER BY pay_date'
+  ).all();
+  const today = todayISO();
+  const nextPayday = paydayRows.find((p) => p.pay_date >= today) || null;
+
   const { results: cats } = await env.DB.prepare(
     'SELECT id, name, sort_order FROM categories ORDER BY sort_order, id'
   ).all();
@@ -89,6 +104,8 @@ async function getState(env) {
     needsFundingCount: needsFunding.length,
     remainingToFund,
     categories,
+    paydays: paydayRows,
+    nextPaycheck: nextPayday ? nextPayday.pay_date : null,
   };
 }
 
@@ -200,6 +217,21 @@ async function handleApi(request, env, url) {
     return json(await getState(env));
   }
 
+  // POST /api/paydays  { pay_date: 'YYYY-MM-DD' }
+  if (method === 'POST' && parts[1] === 'paydays' && parts.length === 2) {
+    const body = await request.json();
+    if (!body.pay_date) return json({ error: 'pay_date is required' }, 400);
+    await env.DB.prepare('INSERT INTO paydays (pay_date) VALUES (?)').bind(body.pay_date).run();
+    return json(await getState(env));
+  }
+
+  // DELETE /api/paydays/:id
+  if (method === 'DELETE' && parts[1] === 'paydays' && parts.length === 3) {
+    const id = parseInt(parts[2], 10);
+    await env.DB.prepare('DELETE FROM paydays WHERE id = ?').bind(id).run();
+    return json(await getState(env));
+  }
+
   if (method === 'POST' && parts[1] === 'bills' && parts[3] === 'mark-unpaid') {
     const id = parseInt(parts[2], 10);
     const existing = await env.DB.prepare('SELECT * FROM bills WHERE id = ?').bind(id).first();
@@ -231,7 +263,10 @@ export default {
         return json({ error: String(err) }, 500);
       }
     }
-    return new Response(PAGE_HTML, { headers: { 'content-type': 'text/html;charset=UTF-8' } });
+    return new Response(
+      PAGE_HTML.replace('__TODAY_DATE__', todayEasternDisplay()),
+      { headers: { 'content-type': 'text/html;charset=UTF-8' } }
+    );
   },
 };
 
@@ -248,6 +283,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 'header.topbar{display:flex;align-items:center;margin-bottom:28px;padding-bottom:16px;border-bottom:2px solid #000;}' +
 '.brand{font-family:"Spectral",serif;font-weight:700;font-size:26px;letter-spacing:0.2px;color:#000;}' +
 '.brand span{color:var(--peach);}' +
+'.brand .today-date{font-weight:400;font-size:0.55em;color:#333;}' +
 '.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px;}' +
 '.card{background:var(--paper-raised);border:1px solid var(--slate);border-radius:8px;padding:16px 18px;text-align:center;}' +
 '.card .label{font-size:14.5px;color:var(--muted);font-weight:600;cursor:default;}' +
@@ -259,6 +295,10 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '.funding-banner{display:flex;align-items:center;justify-content:space-between;background:var(--amber-bg);border:1px solid var(--amber);border-radius:8px;padding:14px 18px;margin-bottom:28px;flex-wrap:wrap;gap:10px;}' +
 '.funding-banner .msg{font-size:14px;}' +
 '.funding-banner .msg strong{font-family:"IBM Plex Mono",monospace;}' +
+'.payday-banner{background:#fff;border:1px solid var(--teal);border-radius:8px;padding:14px 18px;margin-bottom:22px;color:var(--ink);font-size:14px;}' +
+'.payday-banner strong{font-family:"IBM Plex Mono",monospace;color:var(--teal);}' +
+'.paydays-section{margin-bottom:26px;}' +
+'.paydays-title{font-family:"Spectral",serif;font-weight:600;font-size:18px;color:#fff;margin-bottom:8px;}' +
 '.category{margin-bottom:26px;}' +
 '.category-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;}' +
 '.category-title{font-family:"Spectral",serif;font-weight:600;font-size:18px;color:#fff;}' +
@@ -298,6 +338,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 'var state=null;' +
 'var editingBillId=null;' +
 'var addingInCategoryId=null;' +
+'var addingPayday=false;' +
 'var editingBalance=false;' +
 'function el(tag,attrs,children){var e=document.createElement(tag);attrs=attrs||{};for(var k in attrs){if(k==="class")e.className=attrs[k];else if(k==="html")e.innerHTML=attrs[k];else e.setAttribute(k,attrs[k]);}children=children||[];for(var i=0;i<children.length;i++){if(children[i])e.appendChild(children[i]);}return e;}' +
 'function fmt(n){var v=(Math.round((n+Number.EPSILON)*100)/100).toFixed(2);var neg=v.charAt(0)==="-";if(neg)v=v.slice(1);var parts=v.split(".");parts[0]=parts[0].replace(/\\B(?=(\\d{3})+(?!\\d))/g,",");return (neg?"-$":"$")+parts.join(".");}' +
@@ -308,7 +349,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 'function render(){' +
 '  var app=document.getElementById("app");' +
 '  app.innerHTML="";' +
-'  var header=el("header",{class:"topbar"},[el("div",{class:"brand",html:"Tony\'s General Ledger<span>.</span>"})]);' +
+'  var header=el("header",{class:"topbar"},[el("div",{class:"brand",html:"Tony\'s General Ledger<span>.</span> - Today\'s Date: <span class=\\"today-date\\">__TODAY_DATE__</span>"})]);' +
 '  app.appendChild(header);' +
 '  var summary=el("div",{class:"summary"},[' +
 '    renderBalanceCard(),' +
@@ -316,6 +357,12 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '    el("div",{class:"card safe"},[el("div",{class:"label"},[document.createTextNode("Spending")]),el("div",{class:"value"},[document.createTextNode(fmt(state.spending))])])' +
 '  ]);' +
 '  app.appendChild(summary);' +
+'  var paydayBanner=el("div",{class:"payday-banner"},[' +
+'    (state.nextPaycheck?document.createTextNode("Next Paycheck: "):document.createTextNode("No upcoming payday on file — add one below."))' +
+'  ]);' +
+'  if(state.nextPaycheck){paydayBanner.appendChild(el("strong",{},[document.createTextNode(fmtDate(state.nextPaycheck))]));}' +
+'  app.appendChild(paydayBanner);' +
+'  app.appendChild(renderPaydaysSection());' +
 '  if(state.needsFundingCount>0){' +
 '    var banner=el("div",{class:"funding-banner"},[' +
 '      el("div",{class:"msg",html:state.needsFundingCount+" bill(s) still need funding, totaling <strong>"+fmt(state.remainingToFund)+"</strong>."}),' +
@@ -346,6 +393,35 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '    c.appendChild(val);' +
 '  }' +
 '  return c;' +
+'}' +
+'function renderPaydaysSection(){' +
+'  var wrap=el("div",{class:"paydays-section"},[]);' +
+'  wrap.appendChild(el("div",{class:"paydays-title"},[document.createTextNode("Paydays")]));' +
+'  var table=el("table",{class:"ledger"},[el("tr",{},[el("th",{},[document.createTextNode("Date")]),el("th",{},[document.createTextNode("Actions")])])]);' +
+'  state.paydays.forEach(function(p){' +
+'    var delBtn=el("button",{class:"mini-btn danger"},[document.createTextNode("Delete")]);' +
+'    delBtn.onclick=function(){api("/paydays/"+p.id,{method:"DELETE"}).then(function(s){state=s;render();});};' +
+'    table.appendChild(el("tr",{},[el("td",{},[document.createTextNode(fmtDate(p.pay_date))]),el("td",{class:"row-actions"},[delBtn])]));' +
+'  });' +
+'  if(addingPayday){' +
+'    var dateInput=el("input",{class:"edit-input",type:"date",style:"max-width:180px;"},[]);' +
+'    var saveBtn=el("button",{class:"mini-btn save"},[document.createTextNode("Save")]);' +
+'    saveBtn.onclick=function(){' +
+'      if(!dateInput.value)return;' +
+'      api("/paydays",{method:"POST",body:JSON.stringify({pay_date:dateInput.value})}).then(function(s){state=s;addingPayday=false;render();});' +
+'    };' +
+'    var cancelBtn=el("button",{class:"mini-btn"},[document.createTextNode("Cancel")]);' +
+'    cancelBtn.onclick=function(){addingPayday=false;render();};' +
+'    table.appendChild(el("tr",{},[el("td",{},[dateInput]),el("td",{class:"row-actions"},[saveBtn,cancelBtn])]));' +
+'  }else{' +
+'    var addRowTd=el("td",{colspan:"2"},[]);' +
+'    var addBtn=el("button",{class:"add-row"},[document.createTextNode("+ Add payday")]);' +
+'    addBtn.onclick=function(){addingPayday=true;render();};' +
+'    addRowTd.appendChild(addBtn);' +
+'    table.appendChild(el("tr",{},[addRowTd]));' +
+'  }' +
+'  wrap.appendChild(el("div",{class:"table-wrap"},[table]));' +
+'  return wrap;' +
 '}' +
 'function renderCategory(cat){' +
 '  var head=el("div",{class:"category-head"},[' +
