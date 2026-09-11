@@ -236,7 +236,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '.category{margin-bottom:26px;}' +
 '.category-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;}' +
 '.category-title{font-family:"Spectral",serif;font-weight:600;font-size:18px;color:#fff;}' +
-'.category-total{font-family:"IBM Plex Mono",monospace;font-size:17px;color:#000;font-weight:700;}' +
+'.category-total{font-family:"IBM Plex Mono",monospace;font-size:17px;color:#000;font-weight:700;background:#fff;border-radius:6px;padding:2px 8px;display:inline-block;}' +
 '.table-wrap{overflow-x:auto;border-radius:8px;}' +
 'table.ledger{width:100%;border-collapse:collapse;background:var(--paper-raised);border:1px solid var(--slate);border-radius:8px;overflow:hidden;}' +
 'table.ledger th{text-align:left;font-size:11.5px;font-weight:600;color:var(--muted);padding:9px 12px;border-bottom:1.5px solid var(--slate);background:#F4F7F5;white-space:nowrap;}' +
