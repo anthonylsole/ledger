@@ -385,7 +385,9 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '.category{margin-bottom:26px;}' +
 '.category-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;}' +
 '.category-title{font-family:"Spectral",serif;font-weight:600;font-size:18px;color:#fff;text-transform:uppercase;}' +
-'.category-total{font-family:"IBM Plex Mono",monospace;font-size:17px;color:#fff;font-weight:700;}' +
+'.mini-btn.add{background:#F4F7F5;border-color:var(--teal);color:var(--teal);}' +
+'.totals-row td{background:#F4F7F5;font-weight:700;}' +
+'.totals-row .total-value{color:var(--ink);}' +
 '.table-wrap{overflow-x:auto;border-radius:8px;}' +
 'table.ledger{width:100%;border-collapse:collapse;background:var(--paper-raised);border:1px solid var(--slate);border-radius:8px;overflow:hidden;}' +
 'table.ledger th{text-align:left;font-size:13.5px;font-weight:600;color:var(--muted);padding:9px 12px;border-bottom:1.5px solid var(--slate);background:#F4F7F5;white-space:nowrap;}' +
@@ -408,7 +410,6 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '.mini-btn.pay{background:var(--teal);border-color:var(--teal);color:#fff;}' +
 '.mini-btn.save{background:var(--teal);border-color:var(--teal);color:#fff;}' +
 '.mini-btn.danger{color:var(--rust);border-color:var(--rust-bg);}' +
-'.add-row{text-align:left;padding:9px 12px;font-size:12.5px;font-weight:600;color:var(--teal);cursor:pointer;background:#F4F7F5;border:none;width:100%;}' +
 'footer.bottom{display:flex;justify-content:center;margin-top:12px;}' +
 '.empty{color:#fff;text-align:center;padding:40px 0;font-size:14.5px;}' +
 '.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50;}' +
@@ -500,7 +501,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '    table.appendChild(el("tr",{},[el("td",{},[dateInput]),el("td",{class:"row-actions"},[saveBtn,cancelBtn])]));' +
 '  }else{' +
 '    var addRowTd=el("td",{colspan:"2"},[]);' +
-'    var addBtn=el("button",{class:"add-row"},[document.createTextNode("+ Add payday")]);' +
+'    var addBtn=el("button",{class:"mini-btn add"},[document.createTextNode("+ Add payday")]);' +
 '    addBtn.onclick=function(){addingPayday=true;refreshPaydaysModal();};' +
 '    addRowTd.appendChild(addBtn);' +
 '    table.appendChild(el("tr",{},[addRowTd]));' +
@@ -532,8 +533,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '}' +
 'function renderCategory(cat){' +
 '  var head=el("div",{class:"category-head"},[' +
-'    el("div",{class:"category-title"},[document.createTextNode(cat.name)]),' +
-'    el("div",{class:"category-total"},[document.createTextNode("total "+fmt(cat.total)+"  ·  split "+fmt(cat.split))])' +
+'    el("div",{class:"category-title"},[document.createTextNode(cat.name)])' +
 '  ]);' +
 '  var thead=el("tr",{},[' +
 '    el("th",{},[document.createTextNode("Bill")]),' +
@@ -550,11 +550,14 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  if(cat.id===addingInCategoryId){' +
 '    table.appendChild(renderNewBillRow(cat.id));' +
 '  }else{' +
-'    var addRowTd=el("td",{colspan:"8"},[]);' +
-'    var addBtn=el("button",{class:"add-row"},[document.createTextNode("+ Add bill to "+cat.name)]);' +
+'    var addBtn=el("button",{class:"mini-btn add"},[document.createTextNode("+ Add Bill")]);' +
 '    addBtn.onclick=function(){addingInCategoryId=cat.id;render();};' +
-'    addRowTd.appendChild(addBtn);' +
-'    table.appendChild(el("tr",{},[addRowTd]));' +
+'    table.appendChild(el("tr",{class:"totals-row"},[' +
+'      el("td",{},[addBtn]),' +
+'      el("td",{class:"num total-value"},[document.createTextNode(fmt(cat.total))]),' +
+'      el("td",{class:"num total-value"},[document.createTextNode(fmt(cat.split))]),' +
+'      el("td",{},[]),el("td",{},[]),el("td",{},[]),el("td",{},[]),el("td",{},[])' +
+'    ]));' +
 '  }' +
 '  return el("div",{class:"category"},[head,el("div",{class:"table-wrap"},[table])]);' +
 '}' +
@@ -566,11 +569,6 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '    var payBtn=el("button",{class:"mini-btn pay"},[document.createTextNode("Mark Paid")]);' +
 '    payBtn.onclick=function(){markPaid(b);};' +
 '    actions.appendChild(payBtn);' +
-'  }' +
-'  if(b.status==="paid"){' +
-'    var unpaidBtn=el("button",{class:"mini-btn"},[document.createTextNode("Mark Unpaid")]);' +
-'    unpaidBtn.onclick=function(){if(confirm("Mark "+b.name+" as unpaid?")){api("/bills/"+b.id+"/mark-unpaid",{method:"POST"}).then(function(s){state=s;render();});}};' +
-'    actions.appendChild(unpaidBtn);' +
 '  }' +
 '  var editBtn=el("button",{class:"mini-btn"},[document.createTextNode("Edit")]);' +
 '  editBtn.onclick=function(){editingBillId=b.id;render();};' +
