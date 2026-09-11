@@ -36,9 +36,21 @@ function advanceDueDateIfPast(dueDate) {
   return next;
 }
 
+function daysBetween(aISO, bISO) {
+  const a = new Date(aISO + 'T00:00:00Z');
+  const b = new Date(bISO + 'T00:00:00Z');
+  return Math.round((b - a) / 86400000);
+}
+
 function billStatus(bill) {
   if (bill.status === 'paid') return 'paid';
-  if (bill.split <= 0) return 'needs_funding';
+  if (bill.method === 'A' && bill.due_date <= todayISO()) return 'auto_withdrawn_validate';
+  if (bill.split <= 0) {
+    if (bill.method === 'M' && daysBetween(todayISO(), bill.due_date) <= 5) {
+      return 'fund_immediately';
+    }
+    return 'needs_funding';
+  }
   if (bill.split < bill.total) return 'partial';
   return 'funded';
 }
@@ -252,6 +264,8 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '.status-partial{color:var(--amber);}' +
 '.status-needs_funding{color:var(--rust);}' +
 '.status-paid{color:var(--teal);}' +
+'.status-fund_immediately{display:inline-block;background:var(--rust);color:#fff;font-weight:700;padding:4px 10px;border-radius:4px;font-size:11.5px;}' +
+'.status-auto_withdrawn_validate{display:inline-block;background:var(--amber);color:#fff;font-weight:700;padding:4px 10px;border-radius:4px;font-size:11.5px;}' +
 '.row-actions{display:flex;gap:6px;flex-wrap:wrap;}' +
 '.mini-btn{font-family:"IBM Plex Sans",sans-serif;font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:4px;border:1px solid var(--slate);background:#fff;color:var(--ink);cursor:pointer;white-space:nowrap;}' +
 '.mini-btn.pay{background:var(--teal);border-color:var(--teal);color:#fff;}' +
@@ -275,7 +289,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 'function fmtDate(iso){if(!iso)return "—";var p=iso.split("-");var d=new Date(parseInt(p[0],10),parseInt(p[1],10)-1,parseInt(p[2],10));return d.toLocaleDateString("en-US",{month:"long",day:"numeric"});}' +
 'function api(path,opts){opts=opts||{};opts.headers={"content-type":"application/json"};return fetch("/api"+path,opts).then(function(r){return r.json();});}' +
 'function load(){return api("/state").then(function(s){state=s;render();});}' +
-'function statusLabel(s){return {needs_funding:"Needs funding",partial:"Partially funded",funded:"Fully funded",paid:"Paid"}[s]||s;}' +
+'function statusLabel(s){return {needs_funding:"Needs funding",partial:"Partially funded",funded:"Fully funded",paid:"Paid",fund_immediately:"Fund Immediately",auto_withdrawn_validate:"Auto-Withdrawn, Validate"}[s]||s;}' +
 'function render(){' +
 '  var app=document.getElementById("app");' +
 '  app.innerHTML="";' +
@@ -332,7 +346,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  var nameCell=el("td",{},[document.createTextNode(b.name+" ")]);' +
 '  nameCell.appendChild(el("span",{class:"method-flag flag-"+b.method},[document.createTextNode(b.method)]));' +
 '  var actions=el("td",{class:"row-actions"},[]);' +
-'  if(b.method==="M" && b.status!=="paid"){' +
+'  if((b.method==="M" && b.status!=="paid") || b.status==="auto_withdrawn_validate"){' +
 '    var payBtn=el("button",{class:"mini-btn pay"},[document.createTextNode("Mark Paid")]);' +
 '    payBtn.onclick=function(){markPaid(b);};' +
 '    actions.appendChild(payBtn);' +
