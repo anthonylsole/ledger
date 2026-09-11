@@ -43,6 +43,7 @@ function daysBetween(aISO, bISO) {
 }
 
 function billStatus(bill) {
+  if (bill.manual_status) return bill.manual_status;
   if (bill.status === 'paid') return 'paid';
   if (bill.method === 'A' && bill.due_date <= todayISO()) return 'auto_withdrawn_validate';
   if (bill.split <= 0) {
@@ -162,17 +163,18 @@ async function handleApi(request, env, url) {
       date_paid: b.date_paid !== undefined ? b.date_paid : existing.date_paid,
       date_withdrawn: b.date_withdrawn !== undefined ? b.date_withdrawn : existing.date_withdrawn,
       confirmation: b.confirmation !== undefined ? b.confirmation : existing.confirmation,
+      manual_status: b.manual_status !== undefined ? (b.manual_status || null) : existing.manual_status,
     };
     const status = merged.split >= merged.total && merged.total > 0 ? 'funded'
       : merged.split > 0 ? 'partial' : 'needs_funding';
 
     await env.DB.prepare(
-      `UPDATE bills SET name=?, method=?, total=?, split=?, due_date=?, date_paid=?, date_withdrawn=?, confirmation=?, status=?
+      `UPDATE bills SET name=?, method=?, total=?, split=?, due_date=?, date_paid=?, date_withdrawn=?, confirmation=?, status=?, manual_status=?
        WHERE id=?`
     )
       .bind(
         merged.name, merged.method, merged.total, merged.split, merged.due_date,
-        merged.date_paid, merged.date_withdrawn, merged.confirmation, status, id
+        merged.date_paid, merged.date_withdrawn, merged.confirmation, status, merged.manual_status, id
       )
       .run();
     return json(await getState(env));
@@ -194,6 +196,18 @@ async function handleApi(request, env, url) {
        WHERE id=?`
     )
       .bind(datePaid, newDueDate, dateWithdrawn, confirmation, id)
+      .run();
+    return json(await getState(env));
+  }
+
+  if (method === 'POST' && parts[1] === 'bills' && parts[3] === 'mark-unpaid') {
+    const id = parseInt(parts[2], 10);
+    const existing = await env.DB.prepare('SELECT * FROM bills WHERE id = ?').bind(id).first();
+    if (!existing) return json({ error: 'not found' }, 404);
+    await env.DB.prepare(
+      `UPDATE bills SET date_paid=NULL, status='needs_funding', manual_status=NULL WHERE id=?`
+    )
+      .bind(id)
       .run();
     return json(await getState(env));
   }
@@ -284,6 +298,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 'var state=null;' +
 'var editingBillId=null;' +
 'var addingInCategoryId=null;' +
+'var editingBalance=false;' +
 'function el(tag,attrs,children){var e=document.createElement(tag);attrs=attrs||{};for(var k in attrs){if(k==="class")e.className=attrs[k];else if(k==="html")e.innerHTML=attrs[k];else e.setAttribute(k,attrs[k]);}children=children||[];for(var i=0;i<children.length;i++){if(children[i])e.appendChild(children[i]);}return e;}' +
 'function fmt(n){var v=(Math.round((n+Number.EPSILON)*100)/100).toFixed(2);var neg=v.charAt(0)==="-";if(neg)v=v.slice(1);var parts=v.split(".");parts[0]=parts[0].replace(/\\B(?=(\\d{3})+(?!\\d))/g,",");return (neg?"-$":"$")+parts.join(".");}' +
 'function fmtDate(iso){if(!iso)return "—";var p=iso.split("-");var d=new Date(parseInt(p[0],10),parseInt(p[1],10)-1,parseInt(p[2],10));return d.toLocaleDateString("en-US",{month:"long",day:"numeric"});}' +
@@ -296,7 +311,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  var header=el("header",{class:"topbar"},[el("div",{class:"brand",html:"Tony\'s General Ledger<span>.</span>"})]);' +
 '  app.appendChild(header);' +
 '  var summary=el("div",{class:"summary"},[' +
-'    (function(){var c=el("div",{class:"card editable"},[el("div",{class:"label"},[document.createTextNode("Balance")]),el("div",{class:"value"},[document.createTextNode(fmt(state.balance))])]);c.querySelector(".value").onclick=editBalance;return c;})(),' +
+'    renderBalanceCard(),' +
 '    el("div",{class:"card"},[el("div",{class:"label"},[document.createTextNode("Expenses")]),el("div",{class:"value"},[document.createTextNode(fmt(state.expenses))])]),' +
 '    el("div",{class:"card safe"},[el("div",{class:"label"},[document.createTextNode("Spending")]),el("div",{class:"value"},[document.createTextNode(fmt(state.spending))])])' +
 '  ]);' +
@@ -313,6 +328,24 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  state.categories.forEach(function(cat){app.appendChild(renderCategory(cat));});' +
 '  var footer=el("footer",{class:"bottom"},[(function(){var b=el("button",{class:"btn btn-invert"},[document.createTextNode("+ Add Category")]);b.onclick=addCategory;b.style.border="1.5px solid #fff";b.style.color="#fff";b.style.background="transparent";b.style.padding="9px 16px";b.style.borderRadius="5px";b.style.fontWeight="600";b.style.fontSize="13.5px";b.style.cursor="pointer";return b;})()]);' +
 '  app.appendChild(footer);' +
+'}' +
+'function renderBalanceCard(){' +
+'  var c=el("div",{class:"card editable"},[el("div",{class:"label"},[document.createTextNode("Balance")])]);' +
+'  if(editingBalance){' +
+'    var inp=el("input",{class:"edit-input num",type:"number",step:"0.01",value:state.balance,style:"font-size:18px;text-align:center;margin-top:6px;"},[]);' +
+'    var saveBtn=el("button",{class:"mini-btn save"},[document.createTextNode("Save")]);' +
+'    saveBtn.onclick=function(){var n=parseFloat(inp.value);if(isNaN(n))return;api("/balance",{method:"POST",body:JSON.stringify({balance:n})}).then(function(s){state=s;editingBalance=false;render();});};' +
+'    var cancelBtn=el("button",{class:"mini-btn"},[document.createTextNode("Cancel")]);' +
+'    cancelBtn.onclick=function(){editingBalance=false;render();};' +
+'    inp.onkeydown=function(e){if(e.key==="Enter")saveBtn.onclick();if(e.key==="Escape")cancelBtn.onclick();};' +
+'    c.appendChild(inp);' +
+'    c.appendChild(el("div",{style:"margin-top:8px;display:flex;gap:6px;justify-content:center;"},[saveBtn,cancelBtn]));' +
+'  }else{' +
+'    var val=el("div",{class:"value"},[document.createTextNode(fmt(state.balance))]);' +
+'    val.onclick=function(){editingBalance=true;render();};' +
+'    c.appendChild(val);' +
+'  }' +
+'  return c;' +
 '}' +
 'function renderCategory(cat){' +
 '  var head=el("div",{class:"category-head"},[' +
@@ -381,6 +414,16 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  var dueInput=el("input",{class:"edit-input",type:"date",value:b.due_date},[]);' +
 '  var paidInput=el("input",{class:"edit-input",type:"date",value:b.date_paid||""},[]);' +
 '  var withdrawnInput=el("input",{class:"edit-input",type:"date",value:b.date_withdrawn||""},[]);' +
+'  var statusSelect=el("select",{},[' +
+'    el("option",{value:""},[document.createTextNode("Auto (calculated)")]),' +
+'    el("option",{value:"needs_funding"},[document.createTextNode("Needs funding")]),' +
+'    el("option",{value:"partial"},[document.createTextNode("Partially funded")]),' +
+'    el("option",{value:"funded"},[document.createTextNode("Fully funded")]),' +
+'    el("option",{value:"fund_immediately"},[document.createTextNode("Fund Immediately")]),' +
+'    el("option",{value:"auto_withdrawn_validate"},[document.createTextNode("Auto-Withdrawn, Validate")]),' +
+'    el("option",{value:"paid"},[document.createTextNode("Paid")])' +
+'  ]);' +
+'  statusSelect.value=b.manual_status||"";' +
 '  var actions=el("td",{class:"row-actions"},[]);' +
 '  var saveBtn=el("button",{class:"mini-btn save"},[document.createTextNode("Save")]);' +
 '  saveBtn.onclick=function(){' +
@@ -392,7 +435,8 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '      due_date:dueInput.value,' +
 '      date_paid:paidInput.value||null,' +
 '      date_withdrawn:withdrawnInput.value||null,' +
-'      confirmation:confInput.value||null' +
+'      confirmation:confInput.value||null,' +
+'      manual_status:statusSelect.value||null' +
 '    };' +
 '    api("/bills/"+b.id,{method:"PUT",body:JSON.stringify(payload)}).then(function(s){state=s;editingBillId=null;render();});' +
 '  };' +
@@ -406,16 +450,9 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '    el("td",{},[dueInput]),' +
 '    el("td",{},[paidInput]),' +
 '    el("td",{},[withdrawnInput]),' +
-'    el("td",{},[document.createTextNode(statusLabel(b.status))]),' +
+'    el("td",{},[statusSelect]),' +
 '    actions' +
 '  ]);' +
-'}' +
-'function editBalance(){' +
-'  var v=prompt("Set balance",state.balance);' +
-'  if(v===null)return;' +
-'  var n=parseFloat(v);' +
-'  if(isNaN(n))return;' +
-'  api("/balance",{method:"POST",body:JSON.stringify({balance:n})}).then(function(s){state=s;render();});' +
 '}' +
 'function addCategory(){' +
 '  var name=prompt("New category name");' +
