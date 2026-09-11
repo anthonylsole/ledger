@@ -420,10 +420,9 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '.mini-btn.danger{color:var(--rust);border-color:var(--rust-bg);}' +
 'footer.bottom{display:flex;justify-content:center;margin-top:12px;}' +
 '.empty{color:#fff;text-align:center;padding:40px 0;font-size:14.5px;}' +
-'.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50;}' +
-'.modal{background:#fff;border-radius:8px;padding:22px;width:100%;max-width:420px;max-height:90vh;overflow:auto;}' +
-'.modal h3{font-family:"Spectral",serif;margin-top:0;color:var(--ink);}' +
-'.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px;}' +
+'.paydays-sidebar{position:fixed;top:28px;right:24px;width:260px;max-height:calc(100vh - 56px);overflow-y:auto;background:#fff;border-radius:8px;padding:18px;box-shadow:0 6px 20px rgba(0,0,0,0.3);z-index:40;}' +
+'.paydays-sidebar h3{font-family:"Spectral",serif;margin:0 0 12px;color:var(--ink);font-size:17px;}' +
+'.paydays-sidebar .sidebar-actions{display:flex;justify-content:flex-end;margin-top:12px;}' +
 '.edit-input{width:100%;min-width:80px;padding:5px 6px;border:1px solid var(--slate);border-radius:4px;font-size:12.5px;font-family:"IBM Plex Sans",sans-serif;}' +
 '.edit-input.num{font-family:"IBM Plex Mono",monospace;text-align:right;}' +
 '.edit-name-wrap{display:flex;flex-direction:column;gap:4px;min-width:150px;}' +
@@ -448,8 +447,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  var headerHtml="Tony\'s General Ledger<span>.</span> - Today\'s Date: <span class=\\"today-date\\">__TODAY_DATE__</span>";' +
 '  headerHtml+=" &nbsp;&nbsp;-&nbsp;&nbsp; Next Payday: <span class=\\"today-date\\">"+(state.nextPaycheck?fmtDate(state.nextPaycheck):"Not set")+"</span>";' +
 '  var header=el("header",{class:"topbar"},[' +
-'    el("div",{class:"brand",html:headerHtml}),' +
-'    (function(){var b=el("button",{class:"btn btn-invert"},[document.createTextNode("Paydays")]);b.onclick=openPaydaysModal;return b;})()' +
+'    el("div",{class:"brand",html:headerHtml})' +
 '  ]);' +
 '  app.appendChild(header);' +
 '  var summary=el("div",{class:"summary"},[' +
@@ -470,6 +468,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  state.categories.forEach(function(cat){app.appendChild(renderCategory(cat));});' +
 '  var footer=el("footer",{class:"bottom"},[(function(){var b=el("button",{class:"btn btn-invert"},[document.createTextNode("+ Add Category")]);b.onclick=addCategory;return b;})()]);' +
 '  app.appendChild(footer);' +
+'  refreshPaydaysSidebar();' +
 '}' +
 'function renderBalanceCard(){' +
 '  var c=el("div",{class:"card editable"},[el("div",{class:"label"},[document.createTextNode("Balance")])]);' +
@@ -489,12 +488,11 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  }' +
 '  return c;' +
 '}' +
-'function closeModal(){var m=document.querySelector(".modal-backdrop");if(m)m.remove();}' +
 'function buildPaydaysTable(){' +
 '  var table=el("table",{class:"ledger"},[el("tr",{},[el("th",{},[document.createTextNode("Date")]),el("th",{},[document.createTextNode("Actions")])])]);' +
 '  state.paydays.forEach(function(p){' +
 '    var delBtn=el("button",{class:"mini-btn danger"},[document.createTextNode("Delete")]);' +
-'    delBtn.onclick=function(){api("/paydays/"+p.id,{method:"DELETE"}).then(function(s){state=s;render();refreshPaydaysModal();});};' +
+'    delBtn.onclick=function(){api("/paydays/"+p.id,{method:"DELETE"}).then(function(s){state=s;render();});};' +
 '    table.appendChild(el("tr",{},[el("td",{},[document.createTextNode(fmtDate(p.pay_date))]),el("td",{class:"row-actions"},[delBtn])]));' +
 '  });' +
 '  if(addingPayday){' +
@@ -502,42 +500,32 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '    var saveBtn=el("button",{class:"mini-btn save"},[document.createTextNode("Save")]);' +
 '    saveBtn.onclick=function(){' +
 '      if(!dateInput.value)return;' +
-'      api("/paydays",{method:"POST",body:JSON.stringify({pay_date:dateInput.value})}).then(function(s){state=s;addingPayday=false;render();refreshPaydaysModal();});' +
+'      api("/paydays",{method:"POST",body:JSON.stringify({pay_date:dateInput.value})}).then(function(s){state=s;addingPayday=false;render();});' +
 '    };' +
 '    var cancelBtn=el("button",{class:"mini-btn"},[document.createTextNode("Cancel")]);' +
-'    cancelBtn.onclick=function(){addingPayday=false;refreshPaydaysModal();};' +
+'    cancelBtn.onclick=function(){addingPayday=false;refreshPaydaysSidebar();};' +
 '    table.appendChild(el("tr",{},[el("td",{},[dateInput]),el("td",{class:"row-actions"},[saveBtn,cancelBtn])]));' +
 '  }else{' +
 '    var addRowTd=el("td",{colspan:"2"},[]);' +
 '    var addBtn=el("button",{class:"mini-btn add"},[document.createTextNode("+ Add payday")]);' +
-'    addBtn.onclick=function(){addingPayday=true;refreshPaydaysModal();};' +
+'    addBtn.onclick=function(){addingPayday=true;refreshPaydaysSidebar();};' +
 '    addRowTd.appendChild(addBtn);' +
 '    table.appendChild(el("tr",{},[addRowTd]));' +
 '  }' +
 '  return el("div",{class:"table-wrap"},[table]);' +
 '}' +
-'function refreshPaydaysModal(){' +
-'  var content=document.getElementById("paydays-modal-content");' +
-'  if(!content)return;' +
-'  content.innerHTML="";' +
-'  content.appendChild(buildPaydaysTable());' +
-'}' +
-'function openPaydaysModal(){' +
-'  closeModal();' +
-'  var backdrop=el("div",{class:"modal-backdrop"},[]);' +
-'  backdrop.onclick=function(e){if(e.target===backdrop)closeModal();};' +
-'  var modal=el("div",{class:"modal"},[]);' +
-'  modal.appendChild(el("h3",{},[document.createTextNode("Paydays")]));' +
-'  var content=el("div",{id:"paydays-modal-content"},[]);' +
-'  modal.appendChild(content);' +
-'  var actions=el("div",{class:"modal-actions"},[' +
-'    (function(){var b=el("button",{class:"mini-btn danger"},[document.createTextNode("Clear All")]);b.onclick=function(){if(confirm("Clear every payday? This can\'t be undone — do this at year-end once HR releases the new pay calendar.")){api("/paydays",{method:"DELETE"}).then(function(s){state=s;render();refreshPaydaysModal();});}};return b;})(),' +
-'    (function(){var b=el("button",{class:"btn btn-ghost"},[document.createTextNode("Close")]);b.onclick=closeModal;return b;})()' +
-'  ]);' +
-'  modal.appendChild(actions);' +
-'  backdrop.appendChild(modal);' +
-'  document.body.appendChild(backdrop);' +
-'  refreshPaydaysModal();' +
+'function refreshPaydaysSidebar(){' +
+'  var sidebar=document.getElementById("paydays-sidebar");' +
+'  if(!sidebar){' +
+'    sidebar=el("div",{class:"paydays-sidebar",id:"paydays-sidebar"},[]);' +
+'    document.body.appendChild(sidebar);' +
+'  }' +
+'  sidebar.innerHTML="";' +
+'  sidebar.appendChild(el("h3",{},[document.createTextNode("Paydays")]));' +
+'  sidebar.appendChild(buildPaydaysTable());' +
+'  var clearBtn=el("button",{class:"mini-btn danger"},[document.createTextNode("Clear All")]);' +
+'  clearBtn.onclick=function(){if(confirm("Clear every payday? This can\'t be undone — do this at year-end once HR releases the new pay calendar.")){api("/paydays",{method:"DELETE"}).then(function(s){state=s;render();});}};' +
+'  sidebar.appendChild(el("div",{class:"sidebar-actions"},[clearBtn]));' +
 '}' +
 'function renderCategory(cat){' +
 '  var head=el("div",{class:"category-head"},[' +
