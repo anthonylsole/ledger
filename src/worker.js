@@ -364,7 +364,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '    el("td",{class:"datecell"},[document.createTextNode(fmtDate(b.due_date))]),' +
 '    el("td",{class:"datecell"},[document.createTextNode(fmtDate(b.date_paid))]),' +
 '    el("td",{class:"datecell"},[document.createTextNode(fmtDate(b.date_withdrawn))]),' +
-'    el("td",{class:"status status-"+b.status},[document.createTextNode(statusLabel(b.status))]),' +
+'    el("td",{},[el("span",{class:"status status-"+b.status},[document.createTextNode(statusLabel(b.status))])]),' +
 '    actions' +
 '  ]);' +
 '}' +
