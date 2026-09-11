@@ -1,4 +1,4 @@
-name = "tonys-general-ledger"
+name = "ledger"
 main = "src/worker.js"
 compatibility_date = "2024-09-23"
 
