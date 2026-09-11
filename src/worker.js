@@ -280,10 +280,10 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '*{box-sizing:border-box;}' +
 'body{margin:0;background:linear-gradient(180deg,#8FD9FB 0%,#022333 100%);background-attachment:fixed;color:var(--ink);font-family:"IBM Plex Sans",sans-serif;line-height:1.4;}' +
 '.app{max-width:1240px;margin:0 auto;padding:28px 24px 80px;}' +
-'header.topbar{display:flex;align-items:center;margin-bottom:28px;padding-bottom:16px;border-bottom:2px solid #000;}' +
+'header.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;padding-bottom:16px;border-bottom:2px solid #000;flex-wrap:wrap;gap:12px;}' +
 '.brand{font-family:"Spectral",serif;font-weight:700;font-size:26px;letter-spacing:0.2px;color:#000;}' +
 '.brand span{color:var(--peach);}' +
-'.brand .today-date{font-weight:400;font-size:0.55em;color:#333;}' +
+'.brand .today-date{font-weight:400;font-size:1em;color:#333;}' +
 '.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px;}' +
 '.card{background:var(--paper-raised);border:1px solid var(--slate);border-radius:8px;padding:16px 18px;text-align:center;}' +
 '.card .label{font-size:14.5px;color:var(--muted);font-weight:600;cursor:default;}' +
@@ -349,7 +349,12 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 'function render(){' +
 '  var app=document.getElementById("app");' +
 '  app.innerHTML="";' +
-'  var header=el("header",{class:"topbar"},[el("div",{class:"brand",html:"Tony\'s General Ledger<span>.</span> - Today\'s Date: <span class=\\"today-date\\">__TODAY_DATE__</span>"})]);' +
+'  var headerHtml="Tony\'s General Ledger<span>.</span> - Today\'s Date: <span class=\\"today-date\\">__TODAY_DATE__</span>";' +
+'  headerHtml+=" &nbsp;&nbsp;-&nbsp;&nbsp; Next Payday: <span class=\\"today-date\\">"+(state.nextPaycheck?fmtDate(state.nextPaycheck):"Not set")+"</span>";' +
+'  var header=el("header",{class:"topbar"},[' +
+'    el("div",{class:"brand",html:headerHtml}),' +
+'    (function(){var b=el("button",{class:"btn btn-ghost"},[document.createTextNode("Paydays")]);b.onclick=openPaydaysModal;return b;})()' +
+'  ]);' +
 '  app.appendChild(header);' +
 '  var summary=el("div",{class:"summary"},[' +
 '    renderBalanceCard(),' +
@@ -357,12 +362,6 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '    el("div",{class:"card safe"},[el("div",{class:"label"},[document.createTextNode("Spending")]),el("div",{class:"value"},[document.createTextNode(fmt(state.spending))])])' +
 '  ]);' +
 '  app.appendChild(summary);' +
-'  var paydayBanner=el("div",{class:"payday-banner"},[' +
-'    (state.nextPaycheck?document.createTextNode("Next Paycheck: "):document.createTextNode("No upcoming payday on file — add one below."))' +
-'  ]);' +
-'  if(state.nextPaycheck){paydayBanner.appendChild(el("strong",{},[document.createTextNode(fmtDate(state.nextPaycheck))]));}' +
-'  app.appendChild(paydayBanner);' +
-'  app.appendChild(renderPaydaysSection());' +
 '  if(state.needsFundingCount>0){' +
 '    var banner=el("div",{class:"funding-banner"},[' +
 '      el("div",{class:"msg",html:state.needsFundingCount+" bill(s) still need funding, totaling <strong>"+fmt(state.remainingToFund)+"</strong>."}),' +
@@ -394,13 +393,11 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  }' +
 '  return c;' +
 '}' +
-'function renderPaydaysSection(){' +
-'  var wrap=el("div",{class:"paydays-section"},[]);' +
-'  wrap.appendChild(el("div",{class:"paydays-title"},[document.createTextNode("Paydays")]));' +
+'function buildPaydaysTable(){' +
 '  var table=el("table",{class:"ledger"},[el("tr",{},[el("th",{},[document.createTextNode("Date")]),el("th",{},[document.createTextNode("Actions")])])]);' +
 '  state.paydays.forEach(function(p){' +
 '    var delBtn=el("button",{class:"mini-btn danger"},[document.createTextNode("Delete")]);' +
-'    delBtn.onclick=function(){api("/paydays/"+p.id,{method:"DELETE"}).then(function(s){state=s;render();});};' +
+'    delBtn.onclick=function(){api("/paydays/"+p.id,{method:"DELETE"}).then(function(s){state=s;render();refreshPaydaysModal();});};' +
 '    table.appendChild(el("tr",{},[el("td",{},[document.createTextNode(fmtDate(p.pay_date))]),el("td",{class:"row-actions"},[delBtn])]));' +
 '  });' +
 '  if(addingPayday){' +
@@ -408,20 +405,39 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '    var saveBtn=el("button",{class:"mini-btn save"},[document.createTextNode("Save")]);' +
 '    saveBtn.onclick=function(){' +
 '      if(!dateInput.value)return;' +
-'      api("/paydays",{method:"POST",body:JSON.stringify({pay_date:dateInput.value})}).then(function(s){state=s;addingPayday=false;render();});' +
+'      api("/paydays",{method:"POST",body:JSON.stringify({pay_date:dateInput.value})}).then(function(s){state=s;addingPayday=false;render();refreshPaydaysModal();});' +
 '    };' +
 '    var cancelBtn=el("button",{class:"mini-btn"},[document.createTextNode("Cancel")]);' +
-'    cancelBtn.onclick=function(){addingPayday=false;render();};' +
+'    cancelBtn.onclick=function(){addingPayday=false;refreshPaydaysModal();};' +
 '    table.appendChild(el("tr",{},[el("td",{},[dateInput]),el("td",{class:"row-actions"},[saveBtn,cancelBtn])]));' +
 '  }else{' +
 '    var addRowTd=el("td",{colspan:"2"},[]);' +
 '    var addBtn=el("button",{class:"add-row"},[document.createTextNode("+ Add payday")]);' +
-'    addBtn.onclick=function(){addingPayday=true;render();};' +
+'    addBtn.onclick=function(){addingPayday=true;refreshPaydaysModal();};' +
 '    addRowTd.appendChild(addBtn);' +
 '    table.appendChild(el("tr",{},[addRowTd]));' +
 '  }' +
-'  wrap.appendChild(el("div",{class:"table-wrap"},[table]));' +
-'  return wrap;' +
+'  return el("div",{class:"table-wrap"},[table]);' +
+'}' +
+'function refreshPaydaysModal(){' +
+'  var content=document.getElementById("paydays-modal-content");' +
+'  if(!content)return;' +
+'  content.innerHTML="";' +
+'  content.appendChild(buildPaydaysTable());' +
+'}' +
+'function openPaydaysModal(){' +
+'  closeModal();' +
+'  var backdrop=el("div",{class:"modal-backdrop"},[]);' +
+'  backdrop.onclick=function(e){if(e.target===backdrop)closeModal();};' +
+'  var modal=el("div",{class:"modal"},[]);' +
+'  modal.appendChild(el("h3",{},[document.createTextNode("Paydays")]));' +
+'  var content=el("div",{id:"paydays-modal-content"},[]);' +
+'  modal.appendChild(content);' +
+'  var actions=el("div",{class:"modal-actions"},[(function(){var b=el("button",{class:"btn btn-ghost"},[document.createTextNode("Close")]);b.onclick=closeModal;return b;})()]);' +
+'  modal.appendChild(actions);' +
+'  backdrop.appendChild(modal);' +
+'  document.body.appendChild(backdrop);' +
+'  refreshPaydaysModal();' +
 '}' +
 'function renderCategory(cat){' +
 '  var head=el("div",{class:"category-head"},[' +
