@@ -378,7 +378,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '.btn-primary{background:var(--teal);border-color:var(--teal);color:#fff;}' +
 '.btn-ghost{border-color:#000;color:#000;}' +
 '.btn-invert{border-color:#fff;color:#fff;background:transparent;}' +
-'.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px;}' +
+'.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px;position:sticky;top:0;z-index:30;background:#022333;padding:10px 0;}' +
 '.card{background:var(--paper-raised);border:1px solid var(--slate);border-radius:8px;padding:16px 18px;text-align:center;}' +
 '.card .label{font-size:14.5px;color:var(--muted);font-weight:600;cursor:default;}' +
 '.card .value{font-family:"IBM Plex Mono",monospace;font-size:26px;font-weight:600;margin-top:6px;}' +
