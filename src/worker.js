@@ -324,6 +324,16 @@ async function handleApi(request, env, url) {
     return json(await getState(env));
   }
 
+  // POST /api/bills/reorder  { ids: [billId, billId, ...] } — sets sort_order to array position
+  if (method === 'POST' && parts[1] === 'bills' && parts[2] === 'reorder') {
+    const body = await request.json();
+    if (!Array.isArray(body.ids)) return json({ error: 'ids must be an array' }, 400);
+    for (let i = 0; i < body.ids.length; i++) {
+      await env.DB.prepare('UPDATE bills SET sort_order=? WHERE id=?').bind(i, body.ids[i]).run();
+    }
+    return json(await getState(env));
+  }
+
   if (method === 'DELETE' && parts[1] === 'bills' && parts.length === 3) {
     const id = parseInt(parts[2], 10);
     await env.DB.prepare('DELETE FROM bills WHERE id = ?').bind(id).run();
@@ -412,6 +422,9 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '.status-fund_immediately{display:inline-block;background:var(--rust);color:#fff;font-weight:700;padding:4px 10px;border-radius:4px;font-size:11.5px;}' +
 '.status-auto_withdrawn_validate{color:var(--amber);}' +
 '.row-actions{display:flex;gap:6px;flex-wrap:nowrap;}' +
+'.drag-handle{color:var(--slate);cursor:grab;margin-right:4px;font-size:12px;letter-spacing:-2px;}' +
+'table.ledger tr[draggable="true"]{cursor:grab;}' +
+'table.ledger tr.drag-over{box-shadow:inset 0 2px 0 var(--teal);}' +
 '.mini-btn{font-family:"IBM Plex Sans",sans-serif;font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:4px;border:1px solid var(--slate);background:#fff;color:var(--ink);cursor:pointer;white-space:nowrap;}' +
 '.mini-btn.pay{background:var(--teal);border-color:var(--teal);color:#fff;}' +
 '.mini-btn.save{background:var(--teal);border-color:var(--teal);color:#fff;}' +
@@ -433,6 +446,8 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 'var addingInCategoryId=null;' +
 'var addingPayday=false;' +
 'var editingBalance=false;' +
+'var dragBillId=null;' +
+'var dragCategoryId=null;' +
 'function el(tag,attrs,children){var e=document.createElement(tag);attrs=attrs||{};for(var k in attrs){if(k==="class")e.className=attrs[k];else if(k==="html")e.innerHTML=attrs[k];else e.setAttribute(k,attrs[k]);}children=children||[];for(var i=0;i<children.length;i++){if(children[i])e.appendChild(children[i]);}return e;}' +
 'function fmt(n){var v=(Math.round((n+Number.EPSILON)*100)/100).toFixed(2);var neg=v.charAt(0)==="-";if(neg)v=v.slice(1);var parts=v.split(".");parts[0]=parts[0].replace(/\\B(?=(\\d{3})+(?!\\d))/g,",");return (neg?"-$":"$")+parts.join(".");}' +
 'function fmtDate(iso){if(!iso)return "—";var p=iso.split("-");var d=new Date(parseInt(p[0],10),parseInt(p[1],10)-1,parseInt(p[2],10));return d.toLocaleDateString("en-US",{month:"long",day:"numeric"});}' +
@@ -536,7 +551,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '    el("th",{},[document.createTextNode("Actions")])' +
 '  ]);' +
 '  var table=el("table",{class:"ledger"},[thead]);' +
-'  cat.bills.forEach(function(b){table.appendChild(b.id===editingBillId?renderBillEditRow(b):renderBillRow(b));});' +
+'  cat.bills.forEach(function(b){table.appendChild(b.id===editingBillId?renderBillEditRow(b):renderBillRow(b,cat.id));});' +
 '  if(cat.id===addingInCategoryId){' +
 '    table.appendChild(renderNewBillRow(cat.id));' +
 '  }else{' +
@@ -551,8 +566,10 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  }' +
 '  return el("div",{class:"category"},[head,el("div",{class:"table-wrap"},[table])]);' +
 '}' +
-'function renderBillRow(b){' +
-'  var nameCell=el("td",{},[document.createTextNode(b.name+" ")]);' +
+'function renderBillRow(b,catId){' +
+'  var nameCell=el("td",{},[]);' +
+'  nameCell.appendChild(el("span",{class:"drag-handle"},[document.createTextNode("\\u22ee\\u22ee")]));' +
+'  nameCell.appendChild(document.createTextNode(" "+b.name+" "));' +
 '  nameCell.appendChild(el("span",{class:"method-flag flag-"+b.method},[document.createTextNode(b.method)]));' +
 '  var actions=el("td",{class:"row-actions"},[]);' +
 '  if((b.method==="M" && b.status!=="paid") || b.status==="auto_withdrawn_validate"){' +
@@ -566,7 +583,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  var delBtn=el("button",{class:"mini-btn danger"},[document.createTextNode("Delete")]);' +
 '  delBtn.onclick=function(){if(confirm("Delete "+b.name+"?")){api("/bills/"+b.id,{method:"DELETE"}).then(function(s){state=s;render();});}};' +
 '  actions.appendChild(delBtn);' +
-'  return el("tr",{},[' +
+'  var row=el("tr",{draggable:"true"},[' +
 '    nameCell,' +
 '    el("td",{class:"num"},[document.createTextNode(fmt(b.total))]),' +
 '    el("td",{class:"num"},[document.createTextNode(fmt(b.split))]),' +
@@ -576,6 +593,18 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '    el("td",{},[el("span",{class:"status status-"+b.status},[document.createTextNode(statusLabel(b.status))])]),' +
 '    actions' +
 '  ]);' +
+'  row.ondragstart=function(e){dragBillId=b.id;dragCategoryId=catId;e.dataTransfer.effectAllowed="move";};' +
+'  row.ondragover=function(e){if(dragCategoryId===catId){e.preventDefault();row.classList.add("drag-over");}};' +
+'  row.ondragleave=function(){row.classList.remove("drag-over");};' +
+'  row.ondrop=function(e){' +
+'    e.preventDefault();' +
+'    row.classList.remove("drag-over");' +
+'    if(dragBillId===null||dragCategoryId!==catId||dragBillId===b.id)return;' +
+'    reorderBills(catId,dragBillId,b.id);' +
+'    dragBillId=null;dragCategoryId=null;' +
+'  };' +
+'  row.ondragend=function(){row.classList.remove("drag-over");};' +
+'  return row;' +
 '}' +
 'function renderBillEditRow(b){' +
 '  var nameWrap=el("div",{class:"edit-name-wrap"},[]);' +
@@ -677,6 +706,19 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '    el("td",{},[document.createTextNode("—")]),' +
 '    actions' +
 '  ]);' +
+'}' +
+'function reorderBills(catId,draggedId,targetId){' +
+'  var cat=state.categories.find(function(c){return c.id===catId;});' +
+'  if(!cat)return;' +
+'  var bills=cat.bills;' +
+'  var draggedIndex=bills.findIndex(function(b){return b.id===draggedId;});' +
+'  var targetIndex=bills.findIndex(function(b){return b.id===targetId;});' +
+'  if(draggedIndex===-1||targetIndex===-1||draggedIndex===targetIndex)return;' +
+'  var item=bills.splice(draggedIndex,1)[0];' +
+'  bills.splice(targetIndex,0,item);' +
+'  render();' +
+'  var ids=bills.map(function(b){return b.id;});' +
+'  api("/bills/reorder",{method:"POST",body:JSON.stringify({ids:ids})}).then(function(s){state=s;render();});' +
 '}' +
 'function markPaid(b){' +
 '  var conf=prompt("Confirmation # (optional)",b.confirmation||"");' +
