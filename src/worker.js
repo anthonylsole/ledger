@@ -385,8 +385,8 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '.card.editable .value{cursor:pointer;}' +
 '.card.safe{background:#fff;border-color:var(--slate);}' +
 '.card.safe .label{color:var(--muted);}' +
-'.card.safe .value.positive{color:#9EFF90;}' +
-'.card.safe .value.negative{color:#FF909E;}' +
+'.card.safe .value.positive{color:#1F6F63;}' +
+'.card.safe .value.negative{color:#B54A3F;}' +
 '.payday-banner{background:#fff;border:1px solid var(--teal);border-radius:8px;padding:14px 18px;margin-bottom:22px;color:var(--ink);font-size:14px;}' +
 '.payday-banner strong{font-family:"IBM Plex Mono",monospace;color:var(--teal);}' +
 '.paydays-section{margin-bottom:26px;}' +
