@@ -368,7 +368,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '<style>' +
 ':root{--ink:#1B2733;--paper-raised:#FFFFFF;--teal:#1F6F63;--sage:#4C9A6A;--sage-bg:#E4F1E8;--amber:#C98A2C;--amber-bg:#F7EBD8;--rust:#B54A3F;--rust-bg:#F8E4E1;--slate:#C7D0CC;--muted:#5D6B66;--peach:#FBB18F;}' +
 '*{box-sizing:border-box;}' +
-'body{margin:0;background:#022333;color:var(--ink);font-family:"IBM Plex Sans",sans-serif;line-height:1.4;}' +
+'body{margin:0;background:#005385;color:var(--ink);font-family:"IBM Plex Sans",sans-serif;line-height:1.4;}' +
 '.app{max-width:1440px;margin:0 auto;padding:28px 24px 80px;}' +
 'header.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;padding-bottom:16px;border-bottom:2px solid #fff;flex-wrap:wrap;gap:12px;}' +
 '.brand{font-family:"Spectral",serif;font-weight:700;font-size:26px;letter-spacing:0.2px;color:#fff;}' +
@@ -378,14 +378,15 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '.btn-primary{background:var(--teal);border-color:var(--teal);color:#fff;}' +
 '.btn-ghost{border-color:#000;color:#000;}' +
 '.btn-invert{border-color:#fff;color:#fff;background:transparent;}' +
-'.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px;position:sticky;top:0;z-index:30;background:#022333;padding:10px 0;}' +
+'.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px;position:sticky;top:0;z-index:30;background:#005385;padding:10px 0;}' +
 '.card{background:var(--paper-raised);border:1px solid var(--slate);border-radius:8px;padding:16px 18px;text-align:center;}' +
 '.card .label{font-size:14.5px;color:var(--muted);font-weight:600;cursor:default;}' +
 '.card .value{font-family:"IBM Plex Mono",monospace;font-size:26px;font-weight:600;margin-top:6px;}' +
 '.card.editable .value{cursor:pointer;}' +
-'.card.safe{background:var(--peach);border-color:var(--peach);}' +
-'.card.safe .label{color:#7A3E22;}' +
-'.card.safe .value{color:#4A2312;}' +
+'.card.safe{background:#fff;border-color:var(--slate);}' +
+'.card.safe .label{color:var(--muted);}' +
+'.card.safe .value.positive{color:#9EFF90;}' +
+'.card.safe .value.negative{color:#FF909E;}' +
 '.payday-banner{background:#fff;border:1px solid var(--teal);border-radius:8px;padding:14px 18px;margin-bottom:22px;color:var(--ink);font-size:14px;}' +
 '.payday-banner strong{font-family:"IBM Plex Mono",monospace;color:var(--teal);}' +
 '.paydays-section{margin-bottom:26px;}' +
@@ -466,7 +467,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  var summary=el("div",{class:"summary"},[' +
 '    renderBalanceCard(),' +
 '    el("div",{class:"card"},[el("div",{class:"label"},[document.createTextNode("Expenses")]),el("div",{class:"value"},[document.createTextNode(fmt(state.expenses))])]),' +
-'    el("div",{class:"card safe"},[el("div",{class:"label"},[document.createTextNode("Spending")]),el("div",{class:"value"},[document.createTextNode(fmt(state.spending))])])' +
+'    el("div",{class:"card safe"},[el("div",{class:"label"},[document.createTextNode("Spending")]),el("div",{class:"value "+(state.spending>=0?"positive":"negative")},[document.createTextNode(fmt(state.spending))])])' +
 '  ]);' +
 '  app.appendChild(summary);' +
 '  if(state.categories.length===0){' +
