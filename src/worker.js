@@ -167,6 +167,12 @@ async function getState(env) {
   const needsFunding = bills.filter((b) => b.split < b.total);
   const remainingToFund = needsFunding.reduce((s, b) => s + (b.total - b.split), 0);
 
+  const { results: trackedRows } = await env.DB.prepare(
+    'SELECT id, kind, entry_date, value FROM tracked_values ORDER BY entry_date'
+  ).all();
+  const assets = trackedRows.filter((r) => r.kind === 'asset');
+  const debts = trackedRows.filter((r) => r.kind === 'debt');
+
   return {
     balance,
     expenses,
@@ -177,6 +183,8 @@ async function getState(env) {
     paydays: paydayRows,
     nextPaycheck: nextPayday ? nextPayday.pay_date : null,
     today,
+    assets,
+    debts,
   };
 }
 
@@ -340,6 +348,28 @@ async function handleApi(request, env, url) {
     return json(await getState(env));
   }
 
+  // POST /api/tracked-values  { kind: 'asset'|'debt', entry_date, value }
+  if (method === 'POST' && parts[1] === 'tracked-values' && parts.length === 2) {
+    const body = await request.json();
+    if (!body.kind || !['asset', 'debt'].includes(body.kind)) {
+      return json({ error: "kind must be 'asset' or 'debt'" }, 400);
+    }
+    if (!body.entry_date || typeof body.value !== 'number') {
+      return json({ error: 'entry_date and value are required' }, 400);
+    }
+    await env.DB.prepare('INSERT INTO tracked_values (kind, entry_date, value) VALUES (?, ?, ?)')
+      .bind(body.kind, body.entry_date, body.value)
+      .run();
+    return json(await getState(env));
+  }
+
+  // DELETE /api/tracked-values/:id
+  if (method === 'DELETE' && parts[1] === 'tracked-values' && parts.length === 3) {
+    const id = parseInt(parts[2], 10);
+    await env.DB.prepare('DELETE FROM tracked_values WHERE id = ?').bind(id).run();
+    return json(await getState(env));
+  }
+
   return json({ error: 'not found' }, 404);
 }
 
@@ -386,7 +416,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '.card.safe{background:#fff;border-color:var(--slate);}' +
 '.card.safe .label{color:var(--muted);}' +
 '.card.safe .value.positive{color:#1F6F63;}' +
-'.card.safe .value.negative{color:#B54A3F;}' +
+'.card.safe .value.negative{color:#FF909E;}' +
 '.payday-banner{background:#fff;border:1px solid var(--teal);border-radius:8px;padding:14px 18px;margin-bottom:22px;color:var(--ink);font-size:14px;}' +
 '.payday-banner strong{font-family:"IBM Plex Mono",monospace;color:var(--teal);}' +
 '.paydays-section{margin-bottom:26px;}' +
@@ -449,6 +479,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 'var editingBalance=false;' +
 'var dragBillId=null;' +
 'var dragCategoryId=null;' +
+'var currentView="dashboard";' +
 'function el(tag,attrs,children){var e=document.createElement(tag);attrs=attrs||{};for(var k in attrs){if(k==="class")e.className=attrs[k];else if(k==="html")e.innerHTML=attrs[k];else e.setAttribute(k,attrs[k]);}children=children||[];for(var i=0;i<children.length;i++){if(children[i])e.appendChild(children[i]);}return e;}' +
 'function fmt(n){var v=(Math.round((n+Number.EPSILON)*100)/100).toFixed(2);var neg=v.charAt(0)==="-";if(neg)v=v.slice(1);var parts=v.split(".");parts[0]=parts[0].replace(/\\B(?=(\\d{3})+(?!\\d))/g,",");return (neg?"-$":"$")+parts.join(".");}' +
 'function fmtDate(iso){if(!iso)return "—";var p=iso.split("-");var d=new Date(parseInt(p[0],10),parseInt(p[1],10)-1,parseInt(p[2],10));return d.toLocaleDateString("en-US",{month:"long",day:"numeric"});}' +
@@ -460,23 +491,37 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  app.innerHTML="";' +
 '  var headerHtml="Tony\'s General Ledger<span>.</span> - Today\'s Date: <span class=\\"today-date\\">__TODAY_DATE__</span>";' +
 '  headerHtml+=" &nbsp;&nbsp;-&nbsp;&nbsp; Next Payday: <span class=\\"today-date\\">"+(state.nextPaycheck?fmtDate(state.nextPaycheck):"Not set")+"</span>";' +
+'  var navBtns=[];' +
+'  if(currentView!=="dashboard"){navBtns.push(navButton("Dashboard","dashboard"));}' +
+'  if(currentView!=="assets"){navBtns.push(navButton("Assets","assets"));}' +
+'  if(currentView!=="debts"){navBtns.push(navButton("Debts","debts"));}' +
 '  var header=el("header",{class:"topbar"},[' +
-'    el("div",{class:"brand",html:headerHtml})' +
+'    el("div",{class:"brand",html:headerHtml}),' +
+'    el("div",{style:"display:flex;gap:10px;"},navBtns)' +
 '  ]);' +
 '  app.appendChild(header);' +
-'  var summary=el("div",{class:"summary"},[' +
-'    renderBalanceCard(),' +
-'    el("div",{class:"card"},[el("div",{class:"label"},[document.createTextNode("Expenses")]),el("div",{class:"value"},[document.createTextNode(fmt(state.expenses))])]),' +
-'    el("div",{class:"card safe"},[el("div",{class:"label"},[document.createTextNode("Spending")]),el("div",{class:"value "+(state.spending>=0?"positive":"negative")},[document.createTextNode(fmt(state.spending))])])' +
-'  ]);' +
-'  app.appendChild(summary);' +
-'  if(state.categories.length===0){' +
-'    app.appendChild(el("div",{class:"empty"},[document.createTextNode("No categories yet.")]));' +
+'  if(currentView==="assets"){app.appendChild(renderTrackedValuesPage("asset","Assets"));}' +
+'  else if(currentView==="debts"){app.appendChild(renderTrackedValuesPage("debt","Debts"));}' +
+'  else{' +
+'    var summary=el("div",{class:"summary"},[' +
+'      renderBalanceCard(),' +
+'      el("div",{class:"card"},[el("div",{class:"label"},[document.createTextNode("Expenses")]),el("div",{class:"value"},[document.createTextNode(fmt(state.expenses))])]),' +
+'      el("div",{class:"card safe"},[el("div",{class:"label"},[document.createTextNode("Spending")]),el("div",{class:"value "+(state.spending>=0?"positive":"negative")},[document.createTextNode(fmt(state.spending))])])' +
+'    ]);' +
+'    app.appendChild(summary);' +
+'    if(state.categories.length===0){' +
+'      app.appendChild(el("div",{class:"empty"},[document.createTextNode("No categories yet.")]));' +
+'    }' +
+'    state.categories.forEach(function(cat){app.appendChild(renderCategory(cat));});' +
+'    var footer=el("footer",{class:"bottom"},[(function(){var b=el("button",{class:"btn btn-invert"},[document.createTextNode("+ Add Category")]);b.onclick=addCategory;return b;})()]);' +
+'    app.appendChild(footer);' +
 '  }' +
-'  state.categories.forEach(function(cat){app.appendChild(renderCategory(cat));});' +
-'  var footer=el("footer",{class:"bottom"},[(function(){var b=el("button",{class:"btn btn-invert"},[document.createTextNode("+ Add Category")]);b.onclick=addCategory;return b;})()]);' +
-'  app.appendChild(footer);' +
 '  refreshPaydaysSidebar();' +
+'}' +
+'function navButton(label,view){' +
+'  var b=el("button",{class:"btn btn-invert"},[document.createTextNode(label)]);' +
+'  b.onclick=function(){currentView=view;addingTrackedValue=false;render();};' +
+'  return b;' +
 '}' +
 'function renderBalanceCard(){' +
 '  var c=el("div",{class:"card editable"},[el("div",{class:"label"},[document.createTextNode("Balance")])]);' +
@@ -495,6 +540,65 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '    c.appendChild(val);' +
 '  }' +
 '  return c;' +
+'}' +
+'function buildChartSVG(points){' +
+'  if(points.length===0)return "<div style=\\"color:var(--muted);padding:20px 0;\\">No entries yet — add one below to start the chart.</div>";' +
+'  var W=900,H=240,padL=64,padR=20,padT=20,padB=34;' +
+'  var values=points.map(function(p){return p.value;});' +
+'  var minV=Math.min.apply(null,values),maxV=Math.max.apply(null,values);' +
+'  if(minV===maxV){minV-=1;maxV+=1;}' +
+'  var times=points.map(function(p){return new Date(p.entry_date+"T00:00:00").getTime();});' +
+'  var minT=Math.min.apply(null,times),maxT=Math.max.apply(null,times);' +
+'  if(minT===maxT){maxT=minT+86400000;}' +
+'  function xPos(t){return padL+((t-minT)/(maxT-minT))*(W-padL-padR);}' +
+'  function yPos(v){return H-padB-((v-minV)/(maxV-minV))*(H-padT-padB);}' +
+'  var coords=points.map(function(p,i){return xPos(times[i])+","+yPos(p.value);});' +
+'  var circles=points.map(function(p,i){return "<circle cx=\\""+xPos(times[i])+"\\" cy=\\""+yPos(p.value)+"\\" r=\\"4\\" fill=\\"#1F6F63\\"/>";}).join("");' +
+'  var svg="<svg viewBox=\\"0 0 "+W+" "+H+"\\" style=\\"width:100%;height:240px;\\">"' +
+'    +"<line x1=\\""+padL+"\\" y1=\\""+padT+"\\" x2=\\""+padL+"\\" y2=\\""+(H-padB)+"\\" stroke=\\"#C7D0CC\\"/>"' +
+'    +"<line x1=\\""+padL+"\\" y1=\\""+(H-padB)+"\\" x2=\\""+(W-padR)+"\\" y2=\\""+(H-padB)+"\\" stroke=\\"#C7D0CC\\"/>"' +
+'    +"<polyline points=\\""+coords.join(" ")+"\\" fill=\\"none\\" stroke=\\"#1F6F63\\" stroke-width=\\"2.5\\"/>"' +
+'    +circles' +
+'    +"<text x=\\"6\\" y=\\""+(padT+6)+"\\" font-size=\\"12\\" fill=\\"#5D6B66\\" font-family=\\"IBM Plex Mono,monospace\\">"+fmt(maxV)+"</text>"' +
+'    +"<text x=\\"6\\" y=\\""+(H-padB+4)+"\\" font-size=\\"12\\" fill=\\"#5D6B66\\" font-family=\\"IBM Plex Mono,monospace\\">"+fmt(minV)+"</text>"' +
+'    +"<text x=\\""+padL+"\\" y=\\""+(H-10)+"\\" font-size=\\"12\\" fill=\\"#5D6B66\\">"+fmtDate(points[0].entry_date)+"</text>"' +
+'    +"<text x=\\""+(W-padR)+"\\" y=\\""+(H-10)+"\\" font-size=\\"12\\" fill=\\"#5D6B66\\" text-anchor=\\"end\\">"+fmtDate(points[points.length-1].entry_date)+"</text>"' +
+'    +"</svg>";' +
+'  return svg;' +
+'}' +
+'var addingTrackedValue=false;' +
+'function renderTrackedValuesPage(kind,title){' +
+'  var page=el("div",{},[]);' +
+'  page.appendChild(el("h2",{style:"color:#fff;font-family:\'Spectral\',serif;font-weight:600;margin:6px 0 18px;"},[document.createTextNode(title)]));' +
+'  var entries=(kind==="asset"?state.assets:state.debts).slice().sort(function(a,b){return a.entry_date.localeCompare(b.entry_date);});' +
+'  var chartCard=el("div",{class:"card",style:"text-align:left;padding:20px;margin-bottom:20px;"},[]);' +
+'  chartCard.appendChild(el("div",{html:buildChartSVG(entries)},[]));' +
+'  page.appendChild(chartCard);' +
+'  var table=el("table",{class:"ledger"},[el("tr",{},[el("th",{},[document.createTextNode("Date")]),el("th",{class:"num"},[document.createTextNode("Value")]),el("th",{},[document.createTextNode("Actions")])])]);' +
+'  entries.forEach(function(entry){' +
+'    var delBtn=el("button",{class:"mini-btn danger"},[document.createTextNode("Delete")]);' +
+'    delBtn.onclick=function(){api("/tracked-values/"+entry.id,{method:"DELETE"}).then(function(s){state=s;render();});};' +
+'    table.appendChild(el("tr",{},[el("td",{},[document.createTextNode(fmtDate(entry.entry_date))]),el("td",{class:"num"},[document.createTextNode(fmt(entry.value))]),el("td",{class:"row-actions"},[delBtn])]));' +
+'  });' +
+'  if(addingTrackedValue){' +
+'    var dateInput=el("input",{class:"edit-input",type:"date"},[]);' +
+'    var valueInput=el("input",{class:"edit-input num",type:"number",step:"0.01",placeholder:"0.00"},[]);' +
+'    var saveBtn=el("button",{class:"mini-btn save"},[document.createTextNode("Save")]);' +
+'    saveBtn.onclick=function(){' +
+'      var v=parseFloat(valueInput.value);' +
+'      if(!dateInput.value||isNaN(v))return;' +
+'      api("/tracked-values",{method:"POST",body:JSON.stringify({kind:kind,entry_date:dateInput.value,value:v})}).then(function(s){state=s;addingTrackedValue=false;render();});' +
+'    };' +
+'    var cancelBtn=el("button",{class:"mini-btn"},[document.createTextNode("Cancel")]);' +
+'    cancelBtn.onclick=function(){addingTrackedValue=false;render();};' +
+'    table.appendChild(el("tr",{},[el("td",{},[dateInput]),el("td",{},[valueInput]),el("td",{class:"row-actions"},[saveBtn,cancelBtn])]));' +
+'  }else{' +
+'    var addBtn=el("button",{class:"mini-btn add"},[document.createTextNode("+ Add entry")]);' +
+'    addBtn.onclick=function(){addingTrackedValue=true;render();};' +
+'    table.appendChild(el("tr",{},[el("td",{colspan:"3"},[addBtn])]));' +
+'  }' +
+'  page.appendChild(el("div",{class:"table-wrap"},[table]));' +
+'  return page;' +
 '}' +
 'function buildPaydaysTable(){' +
 '  var table=el("table",{class:"ledger"},[el("tr",{},[el("th",{},[document.createTextNode("Date")]),el("th",{},[document.createTextNode("Actions")])])]);' +
