@@ -408,6 +408,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '.btn-primary{background:var(--teal);border-color:var(--teal);color:#fff;}' +
 '.btn-ghost{border-color:#000;color:#000;}' +
 '.btn-invert{border-color:#fff;color:#fff;background:transparent;}' +
+'.btn-invert-active{border-color:#fff;color:var(--ink);background:#fff;}' +
 '.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px;position:sticky;top:0;z-index:30;background:#005385;padding:10px 0;}' +
 '.card{background:var(--paper-raised);border:1px solid var(--slate);border-radius:8px;padding:16px 18px;text-align:center;}' +
 '.card .label{font-size:14.5px;color:var(--muted);font-weight:600;cursor:default;}' +
@@ -491,10 +492,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  app.innerHTML="";' +
 '  var headerHtml="Tony\'s General Ledger<span>.</span> - Today\'s Date: <span class=\\"today-date\\">__TODAY_DATE__</span>";' +
 '  headerHtml+=" &nbsp;&nbsp;-&nbsp;&nbsp; Next Payday: <span class=\\"today-date\\">"+(state.nextPaycheck?fmtDate(state.nextPaycheck):"Not set")+"</span>";' +
-'  var navBtns=[];' +
-'  if(currentView!=="dashboard"){navBtns.push(navButton("Dashboard","dashboard"));}' +
-'  if(currentView!=="assets"){navBtns.push(navButton("Assets","assets"));}' +
-'  if(currentView!=="debts"){navBtns.push(navButton("Debts","debts"));}' +
+'  var navBtns=[navButton("Dashboard","dashboard"),navButton("Assets","assets"),navButton("Debts","debts")];' +
 '  var header=el("header",{class:"topbar"},[' +
 '    el("div",{class:"brand",html:headerHtml}),' +
 '    el("div",{style:"display:flex;gap:10px;"},navBtns)' +
@@ -519,7 +517,8 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  refreshPaydaysSidebar();' +
 '}' +
 'function navButton(label,view){' +
-'  var b=el("button",{class:"btn btn-invert"},[document.createTextNode(label)]);' +
+'  var isActive=currentView===view;' +
+'  var b=el("button",{class:"btn "+(isActive?"btn-invert-active":"btn-invert")},[document.createTextNode(label)]);' +
 '  b.onclick=function(){currentView=view;addingTrackedValue=false;render();};' +
 '  return b;' +
 '}' +
