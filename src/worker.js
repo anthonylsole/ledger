@@ -133,6 +133,78 @@ async function syncPaydayFunding(env) {
     .run();
 }
 
+function pctChange(current, previous) {
+  if (previous === null || previous === undefined || previous === 0) return null;
+  return ((current - previous) / Math.abs(previous)) * 100;
+}
+
+function lineItemSummary(history) {
+  // history: array of {id, entry_date, value}, ascending by entry_date
+  if (history.length === 0) {
+    return { currentValue: null, lastUpdated: null, changePct: null, ytdPct: null };
+  }
+  const last = history[history.length - 1];
+  const prev = history.length >= 2 ? history[history.length - 2] : null;
+  const changePct = prev ? pctChange(last.value, prev.value) : null;
+
+  const yearStartISO = `${new Date().getUTCFullYear()}-01-01`;
+  let ytdBaseline = null;
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].entry_date < yearStartISO) { ytdBaseline = history[i]; break; }
+  }
+  if (!ytdBaseline) {
+    const thisYear = history.filter((h) => h.entry_date >= yearStartISO);
+    ytdBaseline = thisYear.length ? thisYear[0] : null;
+  }
+  const ytdPct = ytdBaseline ? pctChange(last.value, ytdBaseline.value) : null;
+
+  return { currentValue: last.value, lastUpdated: last.entry_date, changePct, ytdPct };
+}
+
+function buildAggregateSeries(items) {
+  // items: array of { id, history: [{entry_date, value}] }
+  const allDates = Array.from(new Set(items.flatMap((i) => i.history.map((h) => h.entry_date)))).sort();
+  const lastKnown = {};
+  return allDates.map((date) => {
+    items.forEach((i) => {
+      const upToDate = i.history.filter((h) => h.entry_date <= date);
+      if (upToDate.length) lastKnown[i.id] = upToDate[upToDate.length - 1].value;
+    });
+    const total = Object.values(lastKnown).reduce((s, v) => s + v, 0);
+    return { entry_date: date, value: total };
+  });
+}
+
+function buildKindData(kind, lineItemRows, valueRows) {
+  const items = lineItemRows
+    .filter((li) => li.kind === kind)
+    .map((li) => {
+      const history = valueRows
+        .filter((v) => v.line_item_id === li.id)
+        .map((v) => ({ id: v.id, entry_date: v.entry_date, value: v.value }));
+      const summary = lineItemSummary(history);
+      return { id: li.id, name: li.name, type: li.type, history, ...summary };
+    });
+
+  const aggregateSeries = buildAggregateSeries(items.map((i) => ({ id: i.id, history: i.history })));
+  const total = aggregateSeries.length ? aggregateSeries[aggregateSeries.length - 1].value : 0;
+  const prevTotal = aggregateSeries.length >= 2 ? aggregateSeries[aggregateSeries.length - 2].value : null;
+  const changePct = prevTotal !== null ? pctChange(total, prevTotal) : null;
+
+  const yearStartISO = `${new Date().getUTCFullYear()}-01-01`;
+  let ytdBaseline = null;
+  for (let i = aggregateSeries.length - 1; i >= 0; i--) {
+    if (aggregateSeries[i].entry_date < yearStartISO) { ytdBaseline = aggregateSeries[i]; break; }
+  }
+  if (!ytdBaseline) {
+    const thisYear = aggregateSeries.filter((p) => p.entry_date >= yearStartISO);
+    ytdBaseline = thisYear.length ? thisYear[0] : null;
+  }
+  const ytdPct = ytdBaseline ? pctChange(total, ytdBaseline.value) : null;
+
+  return { items, aggregateSeries, total, changePct, ytdPct };
+}
+
 async function getState(env) {
   await syncPaydayFunding(env);
 
@@ -167,11 +239,15 @@ async function getState(env) {
   const needsFunding = bills.filter((b) => b.split < b.total);
   const remainingToFund = needsFunding.reduce((s, b) => s + (b.total - b.split), 0);
 
-  const { results: trackedRows } = await env.DB.prepare(
-    'SELECT id, kind, entry_date, value FROM tracked_values ORDER BY entry_date'
+  const { results: lineItemRows } = await env.DB.prepare(
+    'SELECT * FROM line_items ORDER BY kind, sort_order, id'
   ).all();
-  const assets = trackedRows.filter((r) => r.kind === 'asset');
-  const debts = trackedRows.filter((r) => r.kind === 'debt');
+  const { results: valueRows } = await env.DB.prepare(
+    'SELECT id, line_item_id, entry_date, value FROM tracked_values WHERE line_item_id IS NOT NULL ORDER BY entry_date'
+  ).all();
+
+  const assetsData = buildKindData('asset', lineItemRows, valueRows);
+  const debtsData = buildKindData('debt', lineItemRows, valueRows);
 
   return {
     balance,
@@ -183,8 +259,8 @@ async function getState(env) {
     paydays: paydayRows,
     nextPaycheck: nextPayday ? nextPayday.pay_date : null,
     today,
-    assets,
-    debts,
+    assetsData,
+    debtsData,
   };
 }
 
@@ -348,25 +424,68 @@ async function handleApi(request, env, url) {
     return json(await getState(env));
   }
 
-  // POST /api/tracked-values  { kind: 'asset'|'debt', entry_date, value }
-  if (method === 'POST' && parts[1] === 'tracked-values' && parts.length === 2) {
+  // DELETE /api/tracked-values/:id  — remove one historical entry
+  if (method === 'DELETE' && parts[1] === 'tracked-values' && parts.length === 3) {
+    const id = parseInt(parts[2], 10);
+    await env.DB.prepare('DELETE FROM tracked_values WHERE id = ?').bind(id).run();
+    return json(await getState(env));
+  }
+
+  // POST /api/line-items  { kind, name, type, entry_date, value } — creates a line item with its first value
+  if (method === 'POST' && parts[1] === 'line-items' && parts.length === 2) {
     const body = await request.json();
     if (!body.kind || !['asset', 'debt'].includes(body.kind)) {
       return json({ error: "kind must be 'asset' or 'debt'" }, 400);
     }
-    if (!body.entry_date || typeof body.value !== 'number') {
-      return json({ error: 'entry_date and value are required' }, 400);
+    if (!body.name || !body.entry_date || typeof body.value !== 'number') {
+      return json({ error: 'name, entry_date, and value are required' }, 400);
     }
-    await env.DB.prepare('INSERT INTO tracked_values (kind, entry_date, value) VALUES (?, ?, ?)')
-      .bind(body.kind, body.entry_date, body.value)
-      .run();
+    const { results } = await env.DB.prepare(
+      'SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM line_items WHERE kind=?'
+    ).bind(body.kind).all();
+    const nextOrder = results[0].n;
+    const inserted = await env.DB.prepare(
+      'INSERT INTO line_items (kind, name, type, sort_order) VALUES (?, ?, ?, ?)'
+    ).bind(body.kind, body.name, body.type || null, nextOrder).run();
+    const lineItemId = inserted.meta.last_row_id;
+    await env.DB.prepare(
+      'INSERT INTO tracked_values (kind, entry_date, value, line_item_id) VALUES (?, ?, ?, ?)'
+    ).bind(body.kind, body.entry_date, body.value, lineItemId).run();
     return json(await getState(env));
   }
 
-  // DELETE /api/tracked-values/:id
-  if (method === 'DELETE' && parts[1] === 'tracked-values' && parts.length === 3) {
+  // POST /api/line-items/:id/values  { entry_date, value } — logs a new update for an existing item
+  if (method === 'POST' && parts[1] === 'line-items' && parts[3] === 'values') {
     const id = parseInt(parts[2], 10);
-    await env.DB.prepare('DELETE FROM tracked_values WHERE id = ?').bind(id).run();
+    const body = await request.json();
+    if (!body.entry_date || typeof body.value !== 'number') {
+      return json({ error: 'entry_date and value are required' }, 400);
+    }
+    const li = await env.DB.prepare('SELECT kind FROM line_items WHERE id=?').bind(id).first();
+    if (!li) return json({ error: 'not found' }, 404);
+    await env.DB.prepare(
+      'INSERT INTO tracked_values (kind, entry_date, value, line_item_id) VALUES (?, ?, ?, ?)'
+    ).bind(li.kind, body.entry_date, body.value, id).run();
+    return json(await getState(env));
+  }
+
+  // PUT /api/line-items/:id  { name, type } — edits the item's label, never its history
+  if (method === 'PUT' && parts[1] === 'line-items' && parts.length === 3) {
+    const id = parseInt(parts[2], 10);
+    const body = await request.json();
+    const existing = await env.DB.prepare('SELECT * FROM line_items WHERE id=?').bind(id).first();
+    if (!existing) return json({ error: 'not found' }, 404);
+    const name = body.name ?? existing.name;
+    const type = body.type !== undefined ? body.type : existing.type;
+    await env.DB.prepare('UPDATE line_items SET name=?, type=? WHERE id=?').bind(name, type, id).run();
+    return json(await getState(env));
+  }
+
+  // DELETE /api/line-items/:id  — removes the item and its entire history
+  if (method === 'DELETE' && parts[1] === 'line-items' && parts.length === 3) {
+    const id = parseInt(parts[2], 10);
+    await env.DB.prepare('DELETE FROM tracked_values WHERE line_item_id=?').bind(id).run();
+    await env.DB.prepare('DELETE FROM line_items WHERE id=?').bind(id).run();
     return json(await getState(env));
   }
 
@@ -443,6 +562,8 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 'table.ledger tr:last-child td{border-bottom:none;}' +
 'td.num,th.num{font-family:"IBM Plex Mono",monospace;text-align:right;white-space:nowrap;}' +
 '.value-col{font-family:"IBM Plex Mono",monospace;text-align:center;white-space:nowrap;}' +
+'.pct-positive{color:#1F6F63;}' +
+'.pct-negative{color:#B54A3F;}' +
 'td.datecell{color:var(--ink);white-space:nowrap;}' +
 '.method-flag{font-family:"IBM Plex Mono",monospace;font-weight:600;font-size:11.5px;margin-left:6px;padding:1px 5px;border-radius:3px;}' +
 '.flag-A{background:var(--sage-bg);color:var(--sage);}' +
@@ -585,39 +706,136 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  return svg;' +
 '}' +
 'var addingTrackedValue=false;' +
+'var addingValueForItemId=null;' +
+'var editingLineItemId=null;' +
+'var expandedLineItemId=null;' +
+'function fmtPct(n){if(n===null||n===undefined)return "—";var sign=n>=0?"+":"";return sign+n.toFixed(1)+"%";}' +
+'function pctClass(n){if(n===null||n===undefined)return "";return n>=0?"pct-positive":"pct-negative";}' +
 'function renderTrackedValuesPage(kind,title){' +
+'  var data=kind==="asset"?state.assetsData:state.debtsData;' +
 '  var page=el("div",{},[]);' +
 '  page.appendChild(el("h2",{style:"color:#fff;font-family:\'Spectral\',serif;font-weight:600;margin:6px 0 18px;"},[document.createTextNode(title)]));' +
-'  var columnLabel=kind==="asset"?"Total Assets":"Total Debts";' +
-'  var entries=(kind==="asset"?state.assets:state.debts).slice().sort(function(a,b){return a.entry_date.localeCompare(b.entry_date);});' +
 '  var chartCard=el("div",{class:"card",style:"text-align:left;padding:20px;margin-bottom:20px;"},[]);' +
-'  chartCard.appendChild(el("div",{html:buildChartSVG(entries)},[]));' +
+'  var summaryLine=el("div",{style:"font-family:\'IBM Plex Mono\',monospace;font-size:19px;font-weight:700;margin-bottom:12px;"},[]);' +
+'  summaryLine.appendChild(document.createTextNode("Total: "+fmt(data.total)+"   "));' +
+'  var sinceSpan=el("span",{class:pctClass(data.changePct)},[document.createTextNode("Since last update: "+fmtPct(data.changePct))]);' +
+'  var ytdSpan=el("span",{class:pctClass(data.ytdPct),style:"margin-left:16px;"},[document.createTextNode("YTD: "+fmtPct(data.ytdPct))]);' +
+'  summaryLine.appendChild(sinceSpan);summaryLine.appendChild(ytdSpan);' +
+'  chartCard.appendChild(summaryLine);' +
+'  chartCard.appendChild(el("div",{html:buildChartSVG(data.aggregateSeries)},[]));' +
 '  page.appendChild(chartCard);' +
-'  var table=el("table",{class:"ledger"},[el("tr",{},[el("th",{},[document.createTextNode("Date")]),el("th",{class:"value-col"},[document.createTextNode(columnLabel)]),el("th",{},[document.createTextNode("Actions")])])]);' +
-'  entries.forEach(function(entry){' +
-'    var delBtn=el("button",{class:"mini-btn danger"},[document.createTextNode("Delete")]);' +
-'    delBtn.onclick=function(){api("/tracked-values/"+entry.id,{method:"DELETE"}).then(function(s){state=s;render();});};' +
-'    table.appendChild(el("tr",{},[el("td",{},[document.createTextNode(fmtDateFull(entry.entry_date))]),el("td",{class:"value-col"},[document.createTextNode(fmt(entry.value))]),el("td",{class:"row-actions"},[delBtn])]));' +
+'  var table=el("table",{class:"ledger"},[el("tr",{},[' +
+'    el("th",{},[document.createTextNode("Name")]),' +
+'    el("th",{},[document.createTextNode("Type")]),' +
+'    el("th",{class:"value-col"},[document.createTextNode("Current Value")]),' +
+'    el("th",{},[document.createTextNode("Last Updated")]),' +
+'    el("th",{class:"value-col"},[document.createTextNode("Since Last")]),' +
+'    el("th",{class:"value-col"},[document.createTextNode("YTD")]),' +
+'    el("th",{},[document.createTextNode("Actions")])' +
+'  ])]);' +
+'  data.items.forEach(function(item){' +
+'    table.appendChild(item.id===editingLineItemId?renderLineItemEditRow(item):renderLineItemRow(item,kind));' +
+'    if(addingValueForItemId===item.id){table.appendChild(renderAddValueRow(item));}' +
+'    if(expandedLineItemId===item.id){table.appendChild(renderLineItemHistoryRow(item));}' +
 '  });' +
 '  if(addingTrackedValue){' +
-'    var dateInput=el("input",{class:"edit-input",type:"date"},[]);' +
-'    var valueInput=el("input",{class:"edit-input num",type:"number",step:"0.01",placeholder:"0.00"},[]);' +
-'    var saveBtn=el("button",{class:"mini-btn save"},[document.createTextNode("Save")]);' +
-'    saveBtn.onclick=function(){' +
-'      var v=parseFloat(valueInput.value);' +
-'      if(!dateInput.value||isNaN(v))return;' +
-'      api("/tracked-values",{method:"POST",body:JSON.stringify({kind:kind,entry_date:dateInput.value,value:v})}).then(function(s){state=s;addingTrackedValue=false;render();});' +
-'    };' +
-'    var cancelBtn=el("button",{class:"mini-btn"},[document.createTextNode("Cancel")]);' +
-'    cancelBtn.onclick=function(){addingTrackedValue=false;render();};' +
-'    table.appendChild(el("tr",{},[el("td",{},[dateInput]),el("td",{},[valueInput]),el("td",{class:"row-actions"},[saveBtn,cancelBtn])]));' +
+'    table.appendChild(renderNewLineItemRow(kind));' +
 '  }else{' +
-'    var addBtn=el("button",{class:"mini-btn add"},[document.createTextNode("+ Add entry")]);' +
+'    var addBtn=el("button",{class:"mini-btn add"},[document.createTextNode("+ Add "+(kind==="asset"?"Asset":"Debt"))]);' +
 '    addBtn.onclick=function(){addingTrackedValue=true;render();};' +
-'    table.appendChild(el("tr",{},[el("td",{colspan:"3"},[addBtn])]));' +
+'    table.appendChild(el("tr",{},[el("td",{colspan:"7"},[addBtn])]));' +
 '  }' +
 '  page.appendChild(el("div",{class:"table-wrap"},[table]));' +
 '  return page;' +
+'}' +
+'function renderLineItemRow(item,kind){' +
+'  var actions=el("td",{class:"row-actions"},[]);' +
+'  var updateBtn=el("button",{class:"mini-btn save"},[document.createTextNode("+ Update")]);' +
+'  updateBtn.onclick=function(){addingValueForItemId=item.id;render();};' +
+'  actions.appendChild(updateBtn);' +
+'  var histBtn=el("button",{class:"mini-btn"},[document.createTextNode(expandedLineItemId===item.id?"Hide History":"History")]);' +
+'  histBtn.onclick=function(){expandedLineItemId=expandedLineItemId===item.id?null:item.id;render();};' +
+'  actions.appendChild(histBtn);' +
+'  var editBtn=el("button",{class:"mini-btn"},[document.createTextNode("Edit")]);' +
+'  editBtn.onclick=function(){editingLineItemId=item.id;render();};' +
+'  actions.appendChild(editBtn);' +
+'  var delBtn=el("button",{class:"mini-btn danger"},[document.createTextNode("Delete")]);' +
+'  delBtn.onclick=function(){if(confirm("Delete "+item.name+" and its entire history?")){api("/line-items/"+item.id,{method:"DELETE"}).then(function(s){state=s;render();});}};' +
+'  actions.appendChild(delBtn);' +
+'  return el("tr",{},[' +
+'    el("td",{},[document.createTextNode(item.name)]),' +
+'    el("td",{},[document.createTextNode(item.type||"—")]),' +
+'    el("td",{class:"value-col"},[document.createTextNode(item.currentValue!==null?fmt(item.currentValue):"—")]),' +
+'    el("td",{},[document.createTextNode(item.lastUpdated?fmtDateFull(item.lastUpdated):"—")]),' +
+'    el("td",{class:"value-col "+pctClass(item.changePct)},[document.createTextNode(fmtPct(item.changePct))]),' +
+'    el("td",{class:"value-col "+pctClass(item.ytdPct)},[document.createTextNode(fmtPct(item.ytdPct))]),' +
+'    actions' +
+'  ]);' +
+'}' +
+'function renderLineItemEditRow(item){' +
+'  var nameInput=el("input",{class:"edit-input",value:item.name},[]);' +
+'  var typeInput=el("input",{class:"edit-input",value:item.type||""},[]);' +
+'  var saveBtn=el("button",{class:"mini-btn save"},[document.createTextNode("Save")]);' +
+'  saveBtn.onclick=function(){' +
+'    api("/line-items/"+item.id,{method:"PUT",body:JSON.stringify({name:nameInput.value,type:typeInput.value||null})}).then(function(s){state=s;editingLineItemId=null;render();});' +
+'  };' +
+'  var cancelBtn=el("button",{class:"mini-btn"},[document.createTextNode("Cancel")]);' +
+'  cancelBtn.onclick=function(){editingLineItemId=null;render();};' +
+'  return el("tr",{},[' +
+'    el("td",{},[nameInput]),' +
+'    el("td",{},[typeInput]),' +
+'    el("td",{class:"value-col"},[document.createTextNode(item.currentValue!==null?fmt(item.currentValue):"—")]),' +
+'    el("td",{},[document.createTextNode(item.lastUpdated?fmtDateFull(item.lastUpdated):"—")]),' +
+'    el("td",{},[]),el("td",{},[]),' +
+'    el("td",{class:"row-actions"},[saveBtn,cancelBtn])' +
+'  ]);' +
+'}' +
+'function renderAddValueRow(item){' +
+'  var dateInput=el("input",{class:"edit-input",type:"date"},[]);' +
+'  var valueInput=el("input",{class:"edit-input num",type:"number",step:"0.01",placeholder:"0.00"},[]);' +
+'  var saveBtn=el("button",{class:"mini-btn save"},[document.createTextNode("Save")]);' +
+'  saveBtn.onclick=function(){' +
+'    var v=parseFloat(valueInput.value);' +
+'    if(!dateInput.value||isNaN(v))return;' +
+'    api("/line-items/"+item.id+"/values",{method:"POST",body:JSON.stringify({entry_date:dateInput.value,value:v})}).then(function(s){state=s;addingValueForItemId=null;render();});' +
+'  };' +
+'  var cancelBtn=el("button",{class:"mini-btn"},[document.createTextNode("Cancel")]);' +
+'  cancelBtn.onclick=function(){addingValueForItemId=null;render();};' +
+'  return el("tr",{},[el("td",{colspan:"2"},[document.createTextNode("New update for "+item.name)]),el("td",{},[valueInput]),el("td",{},[dateInput]),el("td",{},[]),el("td",{},[]),el("td",{class:"row-actions"},[saveBtn,cancelBtn])]);' +
+'}' +
+'function renderLineItemHistoryRow(item){' +
+'  var wrap=el("td",{colspan:"7",style:"background:#F4F7F5;padding:14px 20px;"},[]);' +
+'  var sorted=item.history.slice().sort(function(a,b){return b.entry_date.localeCompare(a.entry_date);});' +
+'  var histTable=el("table",{class:"ledger"},[el("tr",{},[el("th",{},[document.createTextNode("Date")]),el("th",{class:"value-col"},[document.createTextNode("Value")]),el("th",{},[document.createTextNode("Actions")])])]);' +
+'  sorted.forEach(function(h){' +
+'    var delBtn=el("button",{class:"mini-btn danger"},[document.createTextNode("Delete")]);' +
+'    delBtn.onclick=function(){if(confirm("Delete this historical entry?")){api("/tracked-values/"+h.id,{method:"DELETE"}).then(function(s){state=s;render();});}};' +
+'    histTable.appendChild(el("tr",{},[el("td",{},[document.createTextNode(fmtDateFull(h.entry_date))]),el("td",{class:"value-col"},[document.createTextNode(fmt(h.value))]),el("td",{class:"row-actions"},[delBtn])]));' +
+'  });' +
+'  wrap.appendChild(histTable);' +
+'  return el("tr",{},[wrap]);' +
+'}' +
+'function renderNewLineItemRow(kind){' +
+'  var nameInput=el("input",{class:"edit-input",placeholder:"Name"},[]);' +
+'  var typeInput=el("input",{class:"edit-input",placeholder:"Type"},[]);' +
+'  var valueInput=el("input",{class:"edit-input num",type:"number",step:"0.01",placeholder:"0.00"},[]);' +
+'  var dateInput=el("input",{class:"edit-input",type:"date"},[]);' +
+'  var saveBtn=el("button",{class:"mini-btn save"},[document.createTextNode("Save")]);' +
+'  saveBtn.onclick=function(){' +
+'    var v=parseFloat(valueInput.value);' +
+'    if(!nameInput.value||!dateInput.value||isNaN(v)){alert("Name, current value, and date are required.");return;}' +
+'    api("/line-items",{method:"POST",body:JSON.stringify({kind:kind,name:nameInput.value,type:typeInput.value||null,entry_date:dateInput.value,value:v})}).then(function(s){state=s;addingTrackedValue=false;render();});' +
+'  };' +
+'  var cancelBtn=el("button",{class:"mini-btn"},[document.createTextNode("Cancel")]);' +
+'  cancelBtn.onclick=function(){addingTrackedValue=false;render();};' +
+'  return el("tr",{},[' +
+'    el("td",{},[nameInput]),' +
+'    el("td",{},[typeInput]),' +
+'    el("td",{},[valueInput]),' +
+'    el("td",{},[dateInput]),' +
+'    el("td",{},[]),el("td",{},[]),' +
+'    el("td",{class:"row-actions"},[saveBtn,cancelBtn])' +
+'  ]);' +
 '}' +
 'function buildPaydaysTable(){' +
 '  var table=el("table",{class:"ledger"},[el("tr",{},[el("th",{},[document.createTextNode("Date")]),el("th",{},[document.createTextNode("Actions")])])]);' +
