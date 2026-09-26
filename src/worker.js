@@ -556,13 +556,11 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  var coords=points.map(function(p,i){return xPos(times[i])+","+yPos(p.value);});' +
 '  var circles=points.map(function(p,i){return "<circle cx=\\""+xPos(times[i])+"\\" cy=\\""+yPos(p.value)+"\\" r=\\"4\\" fill=\\"#1F6F63\\"/>";}).join("");' +
 '  var yTicks=[];' +
-'  var firstYTick=Math.ceil(minV/25000)*25000;' +
-'  for(var yv=firstYTick;yv<=maxV;yv+=25000){yTicks.push(yv);}' +
-'  if(yTicks.length===0){yTicks=[minV,maxV];}' +
-'  var yLines=yTicks.map(function(yv){' +
+'  for(var yv=minV;yv<=maxV;yv+=50000){yTicks.push(yv);}' +
+'  if(yTicks.length===0){yTicks=[minV];}' +
+'  var yLabels=yTicks.map(function(yv){' +
 '    var yy=yPos(yv);' +
-'    return "<line x1=\\""+padL+"\\" y1=\\""+yy+"\\" x2=\\""+(W-padR)+"\\" y2=\\""+yy+"\\" stroke=\\"#C3DCEC\\" stroke-width=\\"1\\"/>"' +
-'      +"<text x=\\""+(padL-10)+"\\" y=\\""+(yy+5)+"\\" font-size=\\"15\\" font-weight=\\"700\\" fill=\\"#2C5170\\" text-anchor=\\"end\\" font-family=\\"IBM Plex Mono,monospace\\">"+fmt(yv)+"</text>";' +
+'    return "<text x=\\""+(padL-10)+"\\" y=\\""+(yy+5)+"\\" font-size=\\"15\\" font-weight=\\"700\\" fill=\\"#2C5170\\" text-anchor=\\"end\\" font-family=\\"IBM Plex Mono,monospace\\">"+fmt(yv)+"</text>";' +
 '  }).join("");' +
 '  var xTicks=[];' +
 '  var cur=new Date(minT);' +
@@ -572,15 +570,13 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '    cur.setMonth(cur.getMonth()+3);' +
 '    if(cur.getDate()!==day){cur.setDate(0);}' +
 '  }' +
-'  var xLines=xTicks.map(function(t){' +
+'  var xLabels=xTicks.map(function(t){' +
 '    var xx=xPos(t);' +
-'    var label=new Date(t).toLocaleDateString("en-US",{month:"short",year:"numeric"});' +
-'    return "<line x1=\\""+xx+"\\" y1=\\""+padT+"\\" x2=\\""+xx+"\\" y2=\\""+(H-padB)+"\\" stroke=\\"#C3DCEC\\" stroke-width=\\"1\\"/>"' +
-'      +"<text x=\\""+xx+"\\" y=\\""+(H-padB+26)+"\\" font-size=\\"15\\" font-weight=\\"700\\" fill=\\"#2C5170\\" text-anchor=\\"middle\\" font-family=\\"IBM Plex Sans,sans-serif\\">"+label+"</text>";' +
+'    var label=new Date(t).toLocaleDateString("en-US",{month:"short",year:"2-digit"});' +
+'    return "<text x=\\""+xx+"\\" y=\\""+(H-padB+26)+"\\" font-size=\\"15\\" font-weight=\\"700\\" fill=\\"#2C5170\\" text-anchor=\\"middle\\" font-family=\\"IBM Plex Sans,sans-serif\\">"+label+"</text>";' +
 '  }).join("");' +
 '  var svg="<svg viewBox=\\"0 0 "+W+" "+H+"\\" style=\\"width:100%;height:400px;\\">"' +
-'    +"<rect x=\\"0\\" y=\\"0\\" width=\\""+W+"\\" height=\\""+H+"\\" fill=\\"#EAF4FB\\"/>"' +
-'    +yLines+xLines' +
+'    +yLabels+xLabels' +
 '    +"<line x1=\\""+padL+"\\" y1=\\""+padT+"\\" x2=\\""+padL+"\\" y2=\\""+(H-padB)+"\\" stroke=\\"#2C5170\\" stroke-width=\\"1.5\\"/>"' +
 '    +"<line x1=\\""+padL+"\\" y1=\\""+(H-padB)+"\\" x2=\\""+(W-padR)+"\\" y2=\\""+(H-padB)+"\\" stroke=\\"#2C5170\\" stroke-width=\\"1.5\\"/>"' +
 '    +"<polyline points=\\""+coords.join(" ")+"\\" fill=\\"none\\" stroke=\\"#1F6F63\\" stroke-width=\\"2.5\\"/>"' +
