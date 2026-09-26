@@ -442,6 +442,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 'table.ledger td{padding:12px 16px;font-size:15.5px;border-bottom:1px solid #E4E9E6;vertical-align:middle;word-wrap:break-word;}' +
 'table.ledger tr:last-child td{border-bottom:none;}' +
 'td.num,th.num{font-family:"IBM Plex Mono",monospace;text-align:right;white-space:nowrap;}' +
+'.value-col{font-family:"IBM Plex Mono",monospace;text-align:center;white-space:nowrap;}' +
 'td.datecell{color:var(--ink);white-space:nowrap;}' +
 '.method-flag{font-family:"IBM Plex Mono",monospace;font-weight:600;font-size:11.5px;margin-left:6px;padding:1px 5px;border-radius:3px;}' +
 '.flag-A{background:var(--sage-bg);color:var(--sage);}' +
@@ -484,6 +485,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 'function el(tag,attrs,children){var e=document.createElement(tag);attrs=attrs||{};for(var k in attrs){if(k==="class")e.className=attrs[k];else if(k==="html")e.innerHTML=attrs[k];else e.setAttribute(k,attrs[k]);}children=children||[];for(var i=0;i<children.length;i++){if(children[i])e.appendChild(children[i]);}return e;}' +
 'function fmt(n){var v=(Math.round((n+Number.EPSILON)*100)/100).toFixed(2);var neg=v.charAt(0)==="-";if(neg)v=v.slice(1);var parts=v.split(".");parts[0]=parts[0].replace(/\\B(?=(\\d{3})+(?!\\d))/g,",");return (neg?"-$":"$")+parts.join(".");}' +
 'function fmtDate(iso){if(!iso)return "—";var p=iso.split("-");var d=new Date(parseInt(p[0],10),parseInt(p[1],10)-1,parseInt(p[2],10));return d.toLocaleDateString("en-US",{month:"long",day:"numeric"});}' +
+'function fmtDateFull(iso){if(!iso)return "—";var p=iso.split("-");var d=new Date(parseInt(p[0],10),parseInt(p[1],10)-1,parseInt(p[2],10));return d.toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});}' +
 'function api(path,opts){opts=opts||{};opts.headers={"content-type":"application/json"};return fetch("/api"+path,opts).then(function(r){return r.json();});}' +
 'function load(){return api("/state").then(function(s){state=s;render();});}' +
 'function statusLabel(s){return {needs_funding:"Needs funding",partial:"Partially funded",funded:"Fully funded",paid:"Paid",fund_immediately:"Fund Immediately",auto_withdrawn_validate:"Auto-Withdrawn, Validate"}[s]||s;}' +
@@ -542,7 +544,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '}' +
 'function buildChartSVG(points){' +
 '  if(points.length===0)return "<div style=\\"color:var(--muted);padding:20px 0;\\">No entries yet — add one below to start the chart.</div>";' +
-'  var W=900,H=240,padL=64,padR=20,padT=20,padB=34;' +
+'  var W=900,H=400,padL=64,padR=20,padT=20,padB=34;' +
 '  var values=points.map(function(p){return p.value;});' +
 '  var minV=Math.min.apply(null,values),maxV=Math.max.apply(null,values);' +
 '  if(minV===maxV){minV-=1;maxV+=1;}' +
@@ -553,7 +555,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  function yPos(v){return H-padB-((v-minV)/(maxV-minV))*(H-padT-padB);}' +
 '  var coords=points.map(function(p,i){return xPos(times[i])+","+yPos(p.value);});' +
 '  var circles=points.map(function(p,i){return "<circle cx=\\""+xPos(times[i])+"\\" cy=\\""+yPos(p.value)+"\\" r=\\"4\\" fill=\\"#1F6F63\\"/>";}).join("");' +
-'  var svg="<svg viewBox=\\"0 0 "+W+" "+H+"\\" style=\\"width:100%;height:240px;\\">"' +
+'  var svg="<svg viewBox=\\"0 0 "+W+" "+H+"\\" style=\\"width:100%;height:400px;\\">"' +
 '    +"<line x1=\\""+padL+"\\" y1=\\""+padT+"\\" x2=\\""+padL+"\\" y2=\\""+(H-padB)+"\\" stroke=\\"#C7D0CC\\"/>"' +
 '    +"<line x1=\\""+padL+"\\" y1=\\""+(H-padB)+"\\" x2=\\""+(W-padR)+"\\" y2=\\""+(H-padB)+"\\" stroke=\\"#C7D0CC\\"/>"' +
 '    +"<polyline points=\\""+coords.join(" ")+"\\" fill=\\"none\\" stroke=\\"#1F6F63\\" stroke-width=\\"2.5\\"/>"' +
@@ -569,15 +571,16 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 'function renderTrackedValuesPage(kind,title){' +
 '  var page=el("div",{},[]);' +
 '  page.appendChild(el("h2",{style:"color:#fff;font-family:\'Spectral\',serif;font-weight:600;margin:6px 0 18px;"},[document.createTextNode(title)]));' +
+'  var columnLabel=kind==="asset"?"Total Assets":"Total Debts";' +
 '  var entries=(kind==="asset"?state.assets:state.debts).slice().sort(function(a,b){return a.entry_date.localeCompare(b.entry_date);});' +
 '  var chartCard=el("div",{class:"card",style:"text-align:left;padding:20px;margin-bottom:20px;"},[]);' +
 '  chartCard.appendChild(el("div",{html:buildChartSVG(entries)},[]));' +
 '  page.appendChild(chartCard);' +
-'  var table=el("table",{class:"ledger"},[el("tr",{},[el("th",{},[document.createTextNode("Date")]),el("th",{class:"num"},[document.createTextNode("Value")]),el("th",{},[document.createTextNode("Actions")])])]);' +
+'  var table=el("table",{class:"ledger"},[el("tr",{},[el("th",{},[document.createTextNode("Date")]),el("th",{class:"value-col"},[document.createTextNode(columnLabel)]),el("th",{},[document.createTextNode("Actions")])])]);' +
 '  entries.forEach(function(entry){' +
 '    var delBtn=el("button",{class:"mini-btn danger"},[document.createTextNode("Delete")]);' +
 '    delBtn.onclick=function(){api("/tracked-values/"+entry.id,{method:"DELETE"}).then(function(s){state=s;render();});};' +
-'    table.appendChild(el("tr",{},[el("td",{},[document.createTextNode(fmtDate(entry.entry_date))]),el("td",{class:"num"},[document.createTextNode(fmt(entry.value))]),el("td",{class:"row-actions"},[delBtn])]));' +
+'    table.appendChild(el("tr",{},[el("td",{},[document.createTextNode(fmtDateFull(entry.entry_date))]),el("td",{class:"value-col"},[document.createTextNode(fmt(entry.value))]),el("td",{class:"row-actions"},[delBtn])]));' +
 '  });' +
 '  if(addingTrackedValue){' +
 '    var dateInput=el("input",{class:"edit-input",type:"date"},[]);' +
