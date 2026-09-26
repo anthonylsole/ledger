@@ -544,7 +544,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '}' +
 'function buildChartSVG(points){' +
 '  if(points.length===0)return "<div style=\\"color:var(--muted);padding:20px 0;\\">No entries yet — add one below to start the chart.</div>";' +
-'  var W=900,H=400,padL=64,padR=20,padT=20,padB=34;' +
+'  var W=900,H=400,padL=95,padR=20,padT=20,padB=50;' +
 '  var values=points.map(function(p){return p.value;});' +
 '  var minV=Math.min.apply(null,values),maxV=Math.max.apply(null,values);' +
 '  if(minV===maxV){minV-=1;maxV+=1;}' +
@@ -555,15 +555,36 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  function yPos(v){return H-padB-((v-minV)/(maxV-minV))*(H-padT-padB);}' +
 '  var coords=points.map(function(p,i){return xPos(times[i])+","+yPos(p.value);});' +
 '  var circles=points.map(function(p,i){return "<circle cx=\\""+xPos(times[i])+"\\" cy=\\""+yPos(p.value)+"\\" r=\\"4\\" fill=\\"#1F6F63\\"/>";}).join("");' +
+'  var yTicks=[];' +
+'  var firstYTick=Math.ceil(minV/25000)*25000;' +
+'  for(var yv=firstYTick;yv<=maxV;yv+=25000){yTicks.push(yv);}' +
+'  if(yTicks.length===0){yTicks=[minV,maxV];}' +
+'  var yLines=yTicks.map(function(yv){' +
+'    var yy=yPos(yv);' +
+'    return "<line x1=\\""+padL+"\\" y1=\\""+yy+"\\" x2=\\""+(W-padR)+"\\" y2=\\""+yy+"\\" stroke=\\"#C3DCEC\\" stroke-width=\\"1\\"/>"' +
+'      +"<text x=\\""+(padL-10)+"\\" y=\\""+(yy+5)+"\\" font-size=\\"15\\" font-weight=\\"700\\" fill=\\"#2C5170\\" text-anchor=\\"end\\" font-family=\\"IBM Plex Mono,monospace\\">"+fmt(yv)+"</text>";' +
+'  }).join("");' +
+'  var xTicks=[];' +
+'  var cur=new Date(minT);' +
+'  while(cur.getTime()<=maxT){' +
+'    xTicks.push(cur.getTime());' +
+'    var day=cur.getDate();' +
+'    cur.setMonth(cur.getMonth()+3);' +
+'    if(cur.getDate()!==day){cur.setDate(0);}' +
+'  }' +
+'  var xLines=xTicks.map(function(t){' +
+'    var xx=xPos(t);' +
+'    var label=new Date(t).toLocaleDateString("en-US",{month:"short",year:"numeric"});' +
+'    return "<line x1=\\""+xx+"\\" y1=\\""+padT+"\\" x2=\\""+xx+"\\" y2=\\""+(H-padB)+"\\" stroke=\\"#C3DCEC\\" stroke-width=\\"1\\"/>"' +
+'      +"<text x=\\""+xx+"\\" y=\\""+(H-padB+26)+"\\" font-size=\\"15\\" font-weight=\\"700\\" fill=\\"#2C5170\\" text-anchor=\\"middle\\" font-family=\\"IBM Plex Sans,sans-serif\\">"+label+"</text>";' +
+'  }).join("");' +
 '  var svg="<svg viewBox=\\"0 0 "+W+" "+H+"\\" style=\\"width:100%;height:400px;\\">"' +
-'    +"<line x1=\\""+padL+"\\" y1=\\""+padT+"\\" x2=\\""+padL+"\\" y2=\\""+(H-padB)+"\\" stroke=\\"#C7D0CC\\"/>"' +
-'    +"<line x1=\\""+padL+"\\" y1=\\""+(H-padB)+"\\" x2=\\""+(W-padR)+"\\" y2=\\""+(H-padB)+"\\" stroke=\\"#C7D0CC\\"/>"' +
+'    +"<rect x=\\"0\\" y=\\"0\\" width=\\""+W+"\\" height=\\""+H+"\\" fill=\\"#EAF4FB\\"/>"' +
+'    +yLines+xLines' +
+'    +"<line x1=\\""+padL+"\\" y1=\\""+padT+"\\" x2=\\""+padL+"\\" y2=\\""+(H-padB)+"\\" stroke=\\"#2C5170\\" stroke-width=\\"1.5\\"/>"' +
+'    +"<line x1=\\""+padL+"\\" y1=\\""+(H-padB)+"\\" x2=\\""+(W-padR)+"\\" y2=\\""+(H-padB)+"\\" stroke=\\"#2C5170\\" stroke-width=\\"1.5\\"/>"' +
 '    +"<polyline points=\\""+coords.join(" ")+"\\" fill=\\"none\\" stroke=\\"#1F6F63\\" stroke-width=\\"2.5\\"/>"' +
 '    +circles' +
-'    +"<text x=\\"6\\" y=\\""+(padT+6)+"\\" font-size=\\"12\\" fill=\\"#5D6B66\\" font-family=\\"IBM Plex Mono,monospace\\">"+fmt(maxV)+"</text>"' +
-'    +"<text x=\\"6\\" y=\\""+(H-padB+4)+"\\" font-size=\\"12\\" fill=\\"#5D6B66\\" font-family=\\"IBM Plex Mono,monospace\\">"+fmt(minV)+"</text>"' +
-'    +"<text x=\\""+padL+"\\" y=\\""+(H-10)+"\\" font-size=\\"12\\" fill=\\"#5D6B66\\">"+fmtDate(points[0].entry_date)+"</text>"' +
-'    +"<text x=\\""+(W-padR)+"\\" y=\\""+(H-10)+"\\" font-size=\\"12\\" fill=\\"#5D6B66\\" text-anchor=\\"end\\">"+fmtDate(points[points.length-1].entry_date)+"</text>"' +
 '    +"</svg>";' +
 '  return svg;' +
 '}' +
