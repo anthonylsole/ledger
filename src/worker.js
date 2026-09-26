@@ -666,7 +666,8 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  }' +
 '  return c;' +
 '}' +
-'function buildChartSVG(points){' +
+'function buildChartSVG(points,yStep){' +
+'  yStep=yStep||100000;' +
 '  if(points.length===0)return "<div style=\\"color:var(--muted);padding:20px 0;\\">No entries yet — add one below to start the chart.</div>";' +
 '  var W=900,H=400,padL=95,padR=20,padT=20,padB=50;' +
 '  var values=points.map(function(p){return p.value;});' +
@@ -680,7 +681,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  var coords=points.map(function(p,i){return xPos(times[i])+","+yPos(p.value);});' +
 '  var circles=points.map(function(p,i){return "<circle cx=\\""+xPos(times[i])+"\\" cy=\\""+yPos(p.value)+"\\" r=\\"4\\" fill=\\"#1F6F63\\"/>";}).join("");' +
 '  var yTicks=[];' +
-'  for(var yv=minV;yv<=maxV;yv+=100000){yTicks.push(yv);}' +
+'  for(var yv=minV;yv<=maxV;yv+=yStep){yTicks.push(yv);}' +
 '  if(yTicks.length===0){yTicks=[minV];}' +
 '  var yLabels=yTicks.map(function(yv){' +
 '    var yy=yPos(yv);' +
@@ -725,7 +726,7 @@ const PAGE_HTML = '<!DOCTYPE html>' +
 '  var ytdSpan=el("span",{class:pctClass(data.ytdPct),style:"margin-left:16px;"},[document.createTextNode("YTD: "+fmtPct(data.ytdPct))]);' +
 '  summaryLine.appendChild(sinceSpan);summaryLine.appendChild(ytdSpan);' +
 '  chartCard.appendChild(summaryLine);' +
-'  chartCard.appendChild(el("div",{html:buildChartSVG(data.aggregateSeries)},[]));' +
+'  chartCard.appendChild(el("div",{html:buildChartSVG(data.aggregateSeries,kind==="asset"?200000:75000)},[]));' +
 '  page.appendChild(chartCard);' +
 '  var table=el("table",{class:"ledger"},[el("tr",{},[' +
 '    el("th",{},[document.createTextNode("Name")]),' +
